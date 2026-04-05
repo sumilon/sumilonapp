@@ -1,0 +1,14 @@
+# Web framework
+flask==3.0.3
+
+# Production WSGI server
+gunicorn==22.0.0
+
+# Firebase / Firestore
+firebase-admin==6.5.0
+
+# AES-256 encryption + PBKDF2 key derivation
+cryptography==42.0.8
+
+# GCP Secret Manager (optional — used only when GOOGLE_CLOUD_PROJECT is set)
+google-cloud-secret-manager==2.20.0
