@@ -1,0 +1,16 @@
+# Web framework
+flask==3.1.3
+
+# Production WSGI server
+gunicorn==23.0.0
+
+# Firebase / Firestore
+firebase-admin==6.9.0
+
+# AES-256 encryption + PBKDF2 key derivation
+# cryptography 42.x had 4 CVEs (incl. HIGH CVE-2026-26007); 46.0.6+ is clean.
+cryptography==46.0.6
+
+# GCP Secret Manager (optional — used only when GOOGLE_CLOUD_PROJECT is set)
+google-cloud-secret-manager==2.22.0
+
