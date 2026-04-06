@@ -11,6 +11,12 @@ URL map
 
 Each page is a fully standalone single-page application.
 No page links to any other page.
+
+Gunicorn entry point: app:app
+  The module-level `app` object is created once at import time so
+  Gunicorn can locate it with the standard `module:object` syntax.
+  Using `app:create_app()` with parentheses is not supported by all
+  Gunicorn versions and fails on some Cloud Run configurations.
 """
 
 import logging
@@ -44,10 +50,10 @@ def create_app() -> Flask:
     """Create, configure and return the Flask application."""
     _configure_logging()
 
-    app = Flask(__name__, template_folder="templates", static_folder=None)
+    flask_app = Flask(__name__, template_folder="templates", static_folder=None)
 
     cfg = Config()
-    app.config.update(
+    flask_app.config.update(
         SECRET_KEY=cfg.SECRET_KEY,
         APP_MASTER_KEY=cfg.APP_MASTER_KEY,
         FIREBASE_CREDENTIALS_JSON=cfg.FIREBASE_CREDENTIALS_JSON,
@@ -59,17 +65,17 @@ def create_app() -> Flask:
         PERMANENT_SESSION_LIFETIME=timedelta(hours=cfg.SESSION_LIFETIME_HOURS),
     )
 
-    app.register_blueprint(portfolio_bp,  url_prefix="")
-    app.register_blueprint(calculator_bp, url_prefix="/calculator")
-    app.register_blueprint(todo_bp,       url_prefix="/todo")
-    app.register_blueprint(vault_bp,      url_prefix="/vault")
+    flask_app.register_blueprint(portfolio_bp,  url_prefix="")
+    flask_app.register_blueprint(calculator_bp, url_prefix="/calculator")
+    flask_app.register_blueprint(todo_bp,       url_prefix="/todo")
+    flask_app.register_blueprint(vault_bp,      url_prefix="/vault")
 
-    @app.get("/health")
+    @flask_app.get("/health")
     def health() -> ResponseReturnValue:
         """Cloud Run liveness/readiness probe — no DB, no auth."""
         return jsonify({"status": "ok"}), 200
 
-    @app.after_request
+    @flask_app.after_request
     def security_headers(response):
         response.headers.update({
             "X-Content-Type-Options":  "nosniff",
@@ -80,7 +86,7 @@ def create_app() -> Flask:
                 "default-src 'self'; "
                 "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' "
-                    "https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+                "https://fonts.googleapis.com https://cdn.jsdelivr.net; "
                 "font-src https://fonts.gstatic.com; "
                 "img-src 'self' data:; "
                 "connect-src 'self';"
@@ -89,9 +95,17 @@ def create_app() -> Flask:
         return response
 
     logger.info("Application ready — / /calculator /todo /vault /health")
-    return app
+    return flask_app
+
+
+# ── Module-level app object ───────────────────────────────────────────────────
+# Gunicorn entry point: app:app
+# This is created once at module import time.
+# Cloud Run and Gunicorn locate it via the standard `module:object` syntax
+# without needing parentheses, which avoids compatibility issues.
+app = create_app()
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    create_app().run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
