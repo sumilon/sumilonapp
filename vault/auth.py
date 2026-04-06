@@ -1,7 +1,7 @@
 """
 vault/auth.py — User registration, login, and the login_required decorator.
 
-All Firestore writes go through this module for the users collection.
+All Firestore writes for the users collection go through this module.
 The passwords sub-collection is handled separately in vault/passwords.py.
 """
 
@@ -12,6 +12,7 @@ from functools import wraps
 from typing import Any
 
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 from flask import jsonify, session
 from flask.typing import ResponseReturnValue
 
@@ -20,10 +21,10 @@ from db import get_db
 
 logger = logging.getLogger(__name__)
 
-# Minimal RFC-5322-inspired email regex — not exhaustive, but catches typos.
+# Minimal RFC-5322-inspired email regex — catches typos without over-validating.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# Maximum field lengths to avoid oversized Firestore writes.
+# Maximum field lengths — prevents oversized Firestore writes.
 _MAX_USERNAME_LEN = 120
 _MAX_PASSWORD_LEN = 256
 
@@ -32,7 +33,7 @@ _MAX_PASSWORD_LEN = 256
 
 def login_required(f):
     """
-    Route decorator — returns 401 JSON when the session has no uid.
+    Route decorator — returns 401 JSON when the session contains no uid.
     Apply to every password-manager API endpoint.
     """
     @wraps(f)
@@ -46,11 +47,12 @@ def login_required(f):
 # ── Input validation ──────────────────────────────────────────────────────────
 
 def _validate_registration(
-    username: str, email: str, password: str
+        username: str, email: str, password: str
 ) -> str | None:
     """
-    Return an error message string if inputs are invalid, else None.
-    Validation is intentionally server-side — never rely on the client alone.
+    Server-side input validation for registration.
+    Returns an error string on failure, None on success.
+    Never rely solely on client-side validation.
     """
     if not username or not email or not password:
         return "All fields are required"
@@ -72,14 +74,14 @@ def register_user(username: str, email: str, password: str) -> dict[str, Any]:
     Create a new user document in Firestore.
 
     Stored fields:
-      uid           — random 32-hex ID (plain; identifies sub-collections)
-      email         — plain text (required for the login WHERE query)
+      uid           — random 32-hex ID (plain; locates sub-collections)
+      email         — plain text (required for the login query)
       email_enc     — AES-256 encrypted copy (privacy layer)
       username_enc  — AES-256 encrypted
-      password_hash — PBKDF2-SHA256, irreversible
+      password_hash — PBKDF2-SHA256 hash — irreversible
       created_at    — server timestamp
 
-    Returns {"ok": True} on success or {"error": "<message>"} on failure.
+    Returns {"ok": True} on success, {"error": "<message>"} on failure.
     """
     email    = email.lower().strip()
     username = username.strip()
@@ -90,9 +92,10 @@ def register_user(username: str, email: str, password: str) -> dict[str, Any]:
 
     db = get_db()
 
+    # Use FieldFilter to avoid the deprecated positional .where() API
     existing = (
         db.collection("users")
-        .where("email", "==", email)
+        .where(filter=FieldFilter("email", "==", email))
         .limit(1)
         .get()
     )
@@ -118,10 +121,10 @@ def login_user(email: str, password: str) -> dict[str, Any]:
     """
     Verify credentials and populate the Flask session.
 
-    Deliberately uses the same generic error message for both 'user not found'
-    and 'wrong password' to prevent username enumeration.
+    Uses the same generic error for both "user not found" and "wrong password"
+    to prevent username enumeration attacks.
 
-    Returns {"ok": True, "username": "<name>"} on success,
+    Returns {"ok": True, "username": "<n>"} on success,
     or {"error": "<message>"} on failure.
     """
     email = email.lower().strip()
@@ -132,7 +135,7 @@ def login_user(email: str, password: str) -> dict[str, Any]:
     db   = get_db()
     docs = (
         db.collection("users")
-        .where("email", "==", email)
+        .where(filter=FieldFilter("email", "==", email))
         .limit(1)
         .get()
     )
@@ -145,7 +148,7 @@ def login_user(email: str, password: str) -> dict[str, Any]:
         logger.warning("Login failed — wrong password for uid=%s", user.get("uid"))
         return {"error": "Invalid email or password"}
 
-    username = decrypt(user["username_enc"])
+    username           = decrypt(user["username_enc"])
     session.permanent  = True
     session["uid"]     = user["uid"]
     session["username"] = username
