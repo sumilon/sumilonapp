@@ -14,14 +14,12 @@ import logging
 from typing import Any
 
 from firebase_admin import firestore
+from cryptography.fernet import InvalidToken
 
 from crypto import decrypt, encrypt
 from db import get_db
 
 logger = logging.getLogger(__name__)
-
-# Fields that are encrypted at rest.  url and notes are optional.
-_ENCRYPTED_FIELDS = ("site_name", "site_url", "username", "password", "notes")
 
 # Maximum lengths — prevents oversized Firestore documents.
 _FIELD_MAX: dict[str, int] = {
@@ -50,6 +48,23 @@ def _safe(value: Any, max_len: int) -> str:
     return str(value or "").strip()[:max_len]
 
 
+def _safe_decrypt(payload: dict | None, field_name: str, pid: str) -> str:
+    """
+    Decrypt a Firestore payload field, returning "" on any error.
+    Logs a warning if decryption fails so data-corruption is detectable.
+    """
+    if not payload:
+        return ""
+    try:
+        return decrypt(payload)
+    except (InvalidToken, KeyError, ValueError) as exc:
+        logger.warning(
+            "Decryption failed for field '%s' on pid=%s: %s",
+            field_name, pid, exc,
+        )
+        return "[decryption error]"
+
+
 # ── Read ───────────────────────────────────────────────────────────────────────
 
 def list_passwords(uid: str) -> list[dict[str, str]]:
@@ -64,13 +79,14 @@ def list_passwords(uid: str) -> list[dict[str, str]]:
     )
     results: list[dict[str, str]] = []
     for doc in docs:
-        d = doc.to_dict()
+        d   = doc.to_dict()
+        pid = doc.id
         results.append({
-            "id":        doc.id,
-            "site_name": decrypt(d["site_name_enc"]),
-            "site_url":  decrypt(d["site_url_enc"])  if d.get("site_url_enc")  else "",
-            "username":  decrypt(d["username_enc"]),
-            "notes":     decrypt(d["notes_enc"])     if d.get("notes_enc")     else "",
+            "id":        pid,
+            "site_name": _safe_decrypt(d.get("site_name_enc"), "site_name", pid),
+            "site_url":  _safe_decrypt(d.get("site_url_enc"),  "site_url",  pid),
+            "username":  _safe_decrypt(d.get("username_enc"),  "username",  pid),
+            "notes":     _safe_decrypt(d.get("notes_enc"),     "notes",     pid),
             "created_at": (
                 d["created_at"].isoformat() if d.get("created_at") else ""
             ),
@@ -84,12 +100,17 @@ def get_decrypted_password(uid: str, pid: str) -> str | None:
 
     Only called by the /copy endpoint — never part of a list response.
     Returns None if the document does not exist.
+    Raises InvalidToken if the stored ciphertext has been tampered with.
     """
     doc = _col(uid).document(pid).get()
     if not doc.exists:
         logger.warning("Password copy requested for missing doc pid=%s uid=%s", pid, uid)
         return None
-    return decrypt(doc.to_dict()["password_enc"])
+    d = doc.to_dict()
+    if not d.get("password_enc"):
+        logger.warning("Missing password_enc for pid=%s uid=%s", pid, uid)
+        return None
+    return decrypt(d["password_enc"])
 
 
 # ── Create ─────────────────────────────────────────────────────────────────────

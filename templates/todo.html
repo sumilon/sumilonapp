@@ -239,6 +239,18 @@
     </div>
 </dialog>
 
+<!-- Delete confirmation dialog -->
+<dialog id="del-dlg" aria-labelledby="del-dlg-title" aria-describedby="del-dlg-body">
+    <div class="dlg-title" id="del-dlg-title">Delete Task</div>
+    <p id="del-dlg-body" style="font-size:.88rem;color:var(--muted);margin-bottom:0">
+        Delete <strong id="del-dlg-name"></strong>? This cannot be undone.
+    </p>
+    <div class="dlg-footer">
+        <button class="btn btn-ghost" id="del-cancel" type="button">Cancel</button>
+        <button class="btn btn-red"   id="del-confirm" type="button">Delete</button>
+    </div>
+</dialog>
+
 <div id="toast" role="alert" aria-live="polite"></div>
 
 <script>
@@ -246,11 +258,11 @@
       'use strict';
 
       /* ── localStorage persistence ────────────────────────────────────────────
-         All data is stored in the browser under the key 'vault_todos'.
-         No server calls are made — the /todo/api/* routes are not used.
+         All data is stored in the browser under the key 'app_todos'.
+         No server calls are made — all state is client-side only.
          Data persists across page closes, browser restarts, and device sleeps.
       ── */
-      const STORE_KEY = 'vault_todos';
+      const STORE_KEY = 'app_todos';
 
       function loadFromStorage() {
         try {
@@ -434,11 +446,36 @@
       }
 
       /* ── Delete ── */
-      function delItem(id) {
-        if (!confirm('Delete this task?')) return;
+      async function delItem(id) {
+        const item = items.find(x => x.id === id);
+        if (!item) return;
+        const confirmed = await confirmDelete(item.title);
+        if (!confirmed) return;
         items = items.filter(x => x.id !== id);
         saveToStorage(items);
         render();
+      }
+
+      /* ── Delete confirmation dialog ── */
+      function confirmDelete(name) {
+        return new Promise(resolve => {
+          $('del-dlg-name').textContent = name;
+          $('del-dlg').showModal();
+
+          $('del-confirm').addEventListener('click', () => {
+            $('del-dlg').close();
+            resolve(true);
+          }, { once: true });
+
+          $('del-cancel').addEventListener('click', () => {
+            $('del-dlg').close();
+            resolve(false);
+          }, { once: true });
+
+          $('del-dlg').addEventListener('cancel', () => {
+            resolve(false);
+          }, { once: true });
+        });
       }
 
       /* ── XSS escape ── */

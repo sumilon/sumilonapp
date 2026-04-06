@@ -28,6 +28,13 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _MAX_USERNAME_LEN = 120
 _MAX_PASSWORD_LEN = 256
 
+# Minimum password complexity requirements (server-side enforcement).
+_PW_MIN_LEN    = 8
+_PW_UPPER_RE   = re.compile(r"[A-Z]")
+_PW_LOWER_RE   = re.compile(r"[a-z]")
+_PW_DIGIT_RE   = re.compile(r"\d")
+_PW_SYMBOL_RE  = re.compile(r"[^A-Za-z0-9]")
+
 
 # ── Decorator ─────────────────────────────────────────────────────────────────
 
@@ -60,10 +67,24 @@ def _validate_registration(
         return f"Name must be {_MAX_USERNAME_LEN} characters or fewer"
     if not _EMAIL_RE.match(email):
         return "Please enter a valid email address"
-    if len(password) < 8:
-        return "Password must be at least 8 characters"
+    if len(password) < _PW_MIN_LEN:
+        return f"Password must be at least {_PW_MIN_LEN} characters"
     if len(password) > _MAX_PASSWORD_LEN:
         return f"Password must be {_MAX_PASSWORD_LEN} characters or fewer"
+
+    # Enforce complexity — mirrors the client-side strength meter requirements.
+    missing: list[str] = []
+    if not _PW_UPPER_RE.search(password):
+        missing.append("an uppercase letter")
+    if not _PW_LOWER_RE.search(password):
+        missing.append("a lowercase letter")
+    if not _PW_DIGIT_RE.search(password):
+        missing.append("a number")
+    if not _PW_SYMBOL_RE.search(password):
+        missing.append("a special character")
+    if missing:
+        return "Password must contain: " + ", ".join(missing)
+
     return None
 
 

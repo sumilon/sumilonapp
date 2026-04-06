@@ -66,9 +66,15 @@ class Config:
             "GOOGLE_APPLICATION_CREDENTIALS", ""
         )
 
-        self.SESSION_LIFETIME_HOURS: int = int(
-            os.environ.get("SESSION_LIFETIME_HOURS", "8")
-        )
+        try:
+            self.SESSION_LIFETIME_HOURS: int = int(
+                os.environ.get("SESSION_LIFETIME_HOURS", "8")
+            )
+        except ValueError:
+            logger.warning(
+                "SESSION_LIFETIME_HOURS is not a valid integer — defaulting to 8."
+            )
+            self.SESSION_LIFETIME_HOURS = 8
 
     @staticmethod
     def _resolve(env_var: str, secret_name: str, fallback: str) -> str:

@@ -7,7 +7,9 @@
 <title>Financial Calculator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"
+        integrity="sha256-oFMRyb3GNBDuLu8H3rjqylbGBCE30P7FBxjCFEy9TBU="
+        crossorigin="anonymous"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -20,7 +22,6 @@
 }
 body{font-family:'Inter',system-ui,sans-serif;font-size:15px;background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh}
 
-/* ── Topbar ── */
 
 /* ── Layout ── */
 .wrap{max-width:960px;margin:0 auto;padding:24px 20px 48px}
@@ -73,15 +74,14 @@ select{cursor:pointer}
 
 /* ── Mobile ── */
 @media(max-width:480px){
-      .wrap{padding:16px 14px 40px}
+  .wrap{padding:16px 14px 40px}
   .card{padding:18px}
 }
 </style>
 </head>
 <body>
 
-
-<div class="wrap" role="main">
+<main class="wrap">
   <div class="page-header">
     <h1>Financial Calculator</h1>
     <p>EMI · SIP · Lumpsum · FD · RD · SWP · Weight Price</p>
@@ -110,54 +110,54 @@ select{cursor:pointer}
 
           <!-- EMI -->
           <div id="f-emi" class="calc-fields">
-            <div class="field"><label>Loan Amount (₹)</label><input type="number" name="emi_loan" placeholder="e.g. 5000000" min="1"></div>
-            <div class="field"><label>Annual Interest Rate (%)</label><input type="number" name="emi_rate" placeholder="e.g. 8.5" min="0.01" step="0.01"></div>
-            <div class="field"><label>Tenure (Years)</label><input type="number" name="emi_years" placeholder="e.g. 20" min="1" step="1"></div>
+            <div class="field"><label for="emi_loan">Loan Amount (₹)</label><input type="number" id="emi_loan" name="emi_loan" placeholder="e.g. 5000000" min="1"></div>
+            <div class="field"><label for="emi_rate">Annual Interest Rate (%)</label><input type="number" id="emi_rate" name="emi_rate" placeholder="e.g. 8.5" min="0.01" step="0.01"></div>
+            <div class="field"><label for="emi_years">Tenure (Years)</label><input type="number" id="emi_years" name="emi_years" placeholder="e.g. 20" min="1" step="1"></div>
           </div>
 
           <!-- SIP -->
           <div id="f-sip" class="calc-fields">
-            <div class="field"><label>Monthly Investment (₹)</label><input type="number" name="sip_amount" placeholder="e.g. 10000" min="1"></div>
-            <div class="field"><label>Expected Return Rate (% p.a.)</label><input type="number" name="sip_rate" placeholder="e.g. 12" min="0.01" step="0.01"></div>
-            <div class="field"><label>Investment Duration (Years)</label><input type="number" name="sip_years" placeholder="e.g. 15" min="1" step="1"></div>
+            <div class="field"><label for="sip_amount">Monthly Investment (₹)</label><input type="number" id="sip_amount" name="sip_amount" placeholder="e.g. 10000" min="1"></div>
+            <div class="field"><label for="sip_rate">Expected Return Rate (% p.a.)</label><input type="number" id="sip_rate" name="sip_rate" placeholder="e.g. 12" min="0.01" step="0.01"></div>
+            <div class="field"><label for="sip_years">Investment Duration (Years)</label><input type="number" id="sip_years" name="sip_years" placeholder="e.g. 15" min="1" step="1"></div>
           </div>
 
           <!-- Lumpsum -->
           <div id="f-lumpsum" class="calc-fields">
-            <div class="field"><label>Investment Amount (₹)</label><input type="number" name="lumpsum_amount" placeholder="e.g. 100000" min="1"></div>
-            <div class="field"><label>Expected Return Rate (% p.a.)</label><input type="number" name="lumpsum_rate" placeholder="e.g. 12" min="0.01" step="0.01"></div>
-            <div class="field"><label>Duration (Years)</label><input type="number" name="lumpsum_years" placeholder="e.g. 10" min="1" step="1"></div>
+            <div class="field"><label for="lumpsum_amount">Investment Amount (₹)</label><input type="number" id="lumpsum_amount" name="lumpsum_amount" placeholder="e.g. 100000" min="1"></div>
+            <div class="field"><label for="lumpsum_rate">Expected Return Rate (% p.a.)</label><input type="number" id="lumpsum_rate" name="lumpsum_rate" placeholder="e.g. 12" min="0.01" step="0.01"></div>
+            <div class="field"><label for="lumpsum_years">Duration (Years)</label><input type="number" id="lumpsum_years" name="lumpsum_years" placeholder="e.g. 10" min="1" step="1"></div>
           </div>
 
           <!-- FD -->
           <div id="f-fd" class="calc-fields">
-            <div class="field"><label>Principal Amount (₹)</label><input type="number" name="fd_principal" placeholder="e.g. 100000" min="1"></div>
-            <div class="field"><label>Annual Interest Rate (%)</label><input type="number" name="fd_rate" placeholder="e.g. 7.5" min="0.01" step="0.01"></div>
-            <div class="field"><label>Tenure (Years)</label><input type="number" name="fd_years" placeholder="e.g. 5" min="1" step="1"></div>
+            <div class="field"><label for="fd_principal">Principal Amount (₹)</label><input type="number" id="fd_principal" name="fd_principal" placeholder="e.g. 100000" min="1"></div>
+            <div class="field"><label for="fd_rate">Annual Interest Rate (%)</label><input type="number" id="fd_rate" name="fd_rate" placeholder="e.g. 7.5" min="0.01" step="0.01"></div>
+            <div class="field"><label for="fd_years">Tenure (Years)</label><input type="number" id="fd_years" name="fd_years" placeholder="e.g. 5" min="1" step="1"></div>
             <div class="field-hint">Interest compounded quarterly</div>
           </div>
 
           <!-- RD -->
           <div id="f-rd" class="calc-fields">
-            <div class="field"><label>Monthly Deposit (₹)</label><input type="number" name="rd_deposit" placeholder="e.g. 5000" min="1"></div>
-            <div class="field"><label>Annual Interest Rate (%)</label><input type="number" name="rd_rate" placeholder="e.g. 7" min="0.01" step="0.01"></div>
-            <div class="field"><label>Tenure (Years)</label><input type="number" name="rd_years" placeholder="e.g. 3" min="1" step="1"></div>
+            <div class="field"><label for="rd_deposit">Monthly Deposit (₹)</label><input type="number" id="rd_deposit" name="rd_deposit" placeholder="e.g. 5000" min="1"></div>
+            <div class="field"><label for="rd_rate">Annual Interest Rate (%)</label><input type="number" id="rd_rate" name="rd_rate" placeholder="e.g. 7" min="0.01" step="0.01"></div>
+            <div class="field"><label for="rd_years">Tenure (Years)</label><input type="number" id="rd_years" name="rd_years" placeholder="e.g. 3" min="1" step="1"></div>
             <div class="field-hint">Interest compounded quarterly</div>
           </div>
 
           <!-- SWP -->
           <div id="f-swp" class="calc-fields">
-            <div class="field"><label>Initial Investment (₹)</label><input type="number" name="swp_principal" placeholder="e.g. 1000000" min="1"></div>
-            <div class="field"><label>Monthly Withdrawal (₹)</label><input type="number" name="swp_withdraw" placeholder="e.g. 8000" min="1"></div>
-            <div class="field"><label>Expected Return Rate (% p.a.)</label><input type="number" name="swp_rate" placeholder="e.g. 10" min="0.01" step="0.01"></div>
-            <div class="field"><label>Inflation Rate (% p.a.)</label><input type="number" name="swp_inflation" placeholder="0" min="0" step="0.01" value="0"></div>
-            <div class="field"><label>Withdrawal Period (Years)</label><input type="number" name="swp_years" placeholder="e.g. 10" min="1" step="1"></div>
+            <div class="field"><label for="swp_principal">Initial Investment (₹)</label><input type="number" id="swp_principal" name="swp_principal" placeholder="e.g. 1000000" min="1"></div>
+            <div class="field"><label for="swp_withdraw">Monthly Withdrawal (₹)</label><input type="number" id="swp_withdraw" name="swp_withdraw" placeholder="e.g. 8000" min="1"></div>
+            <div class="field"><label for="swp_rate">Expected Return Rate (% p.a.)</label><input type="number" id="swp_rate" name="swp_rate" placeholder="e.g. 10" min="0.01" step="0.01"></div>
+            <div class="field"><label for="swp_inflation">Inflation Rate (% p.a.)</label><input type="number" id="swp_inflation" name="swp_inflation" placeholder="0" min="0" step="0.01" value="0"></div>
+            <div class="field"><label for="swp_years">Withdrawal Period (Years)</label><input type="number" id="swp_years" name="swp_years" placeholder="e.g. 10" min="1" step="1"></div>
           </div>
 
           <!-- Weight -->
           <div id="f-weight" class="calc-fields">
-            <div class="field"><label>Price per KG (₹)</label><input type="number" name="price_per_kg" placeholder="e.g. 280" min="0.01" step="0.01"></div>
-            <div class="field"><label>Weight (grams)</label><input type="number" name="weight_grams" placeholder="e.g. 250" min="0.01" step="0.01"></div>
+            <div class="field"><label for="price_per_kg">Price per KG (₹)</label><input type="number" id="price_per_kg" name="price_per_kg" placeholder="e.g. 280" min="0.01" step="0.01"></div>
+            <div class="field"><label for="weight_grams">Weight (grams)</label><input type="number" id="weight_grams" name="weight_grams" placeholder="e.g. 250" min="0.01" step="0.01"></div>
           </div>
 
           <button type="submit" class="btn-calc">Calculate</button>
@@ -168,19 +168,19 @@ select{cursor:pointer}
       </div>
 
       <!-- Right: chart -->
-      <div class="chart-panel" id="chartPanel">
-        <div class="chart-empty">
+      <div class="chart-panel">
+        <div class="chart-empty" id="chart-empty">
           <span class="chart-empty-icon">📊</span>
           Select a calculator and enter values to see the chart
         </div>
         <div class="chart-wrap" id="chartWrap" style="display:none">
-          <canvas id="chart"></canvas>
+          <canvas id="chart" aria-label="Calculation results chart" role="img"></canvas>
         </div>
       </div>
 
     </div>
   </div>
-</div>
+</main>
 
 <script>
 (function(){
@@ -261,14 +261,14 @@ select{cursor:pointer}
   /* ── Chart ── */
   let _chart = null;
   function drawChart(labels, data, colors) {
-    const wrap = document.getElementById('chartWrap');
-    const empty = document.querySelector('.chart-empty');
+    const wrap  = document.getElementById('chartWrap');
+    const empty = document.getElementById('chart-empty');
     if (!labels.length || data.some(d => d <= 0)) {
-      wrap.style.display = 'none';
+      wrap.style.display  = 'none';
       empty.style.display = '';
       return;
     }
-    wrap.style.display = '';
+    wrap.style.display  = '';
     empty.style.display = 'none';
     if (_chart) { _chart.destroy(); _chart = null; }
     const ctx = document.getElementById('chart').getContext('2d');
@@ -287,9 +287,9 @@ select{cursor:pointer}
   }
 
   function clearChart() {
-    const wrap = document.getElementById('chartWrap');
-    const empty = document.querySelector('.chart-empty');
-    wrap.style.display = 'none';
+    const wrap  = document.getElementById('chartWrap');
+    const empty = document.getElementById('chart-empty');
+    wrap.style.display  = 'none';
     empty.style.display = '';
     if (_chart) { _chart.destroy(); _chart = null; }
   }

@@ -12,6 +12,7 @@ Credential resolution order:
 
 import json
 import logging
+import threading
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -21,18 +22,29 @@ logger = logging.getLogger(__name__)
 
 # Module-level singleton — set once, reused on every request.
 _db: firestore.Client | None = None
+_db_lock = threading.Lock()
 
 
 def get_db() -> firestore.Client:
-    """Return the Firestore client, initialising Firebase on first call."""
+    """Return the Firestore client, initialising Firebase on first call.
+
+    Thread-safe: uses a lock so concurrent requests at startup cannot
+    initialise the SDK twice.
+    """
     global _db
     if _db is not None:
         return _db
 
-    if not firebase_admin._apps:
-        _db = _init_firebase()
-    else:
-        _db = firestore.client()
+    with _db_lock:
+        # Double-checked locking — another thread may have initialised
+        # between our first check and acquiring the lock.
+        if _db is not None:
+            return _db
+
+        if not firebase_admin._apps:
+            _db = _init_firebase()
+        else:
+            _db = firestore.client()
 
     return _db
 
@@ -50,7 +62,10 @@ def _init_firebase() -> firestore.Client:
 
     if cred_json:
         logger.info("Firebase: initialising from JSON credentials.")
-        cred = credentials.Certificate(json.loads(cred_json))
+        try:
+            cred = credentials.Certificate(json.loads(cred_json))
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise RuntimeError("FIREBASE_CREDENTIALS_JSON is not valid JSON") from exc
     elif cred_path:
         logger.info("Firebase: initialising from credentials file at '%s'.", cred_path)
         cred = credentials.Certificate(cred_path)

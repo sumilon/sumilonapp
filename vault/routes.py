@@ -9,6 +9,7 @@ Passwords (login required):
          POST /vault/api/passwords/<pid>/copy
 """
 import logging
+from cryptography.fernet import InvalidToken
 from flask import (
     Blueprint, jsonify, make_response,
     redirect, render_template, request, session, url_for,
@@ -35,6 +36,8 @@ def _page(template: str, **ctx) -> ResponseReturnValue:
     return resp
 
 
+# ── Pages ─────────────────────────────────────────────────────────────────────
+
 @vault_bp.get("/")
 @vault_bp.get("/login")
 def index() -> ResponseReturnValue:
@@ -45,11 +48,15 @@ def index() -> ResponseReturnValue:
         username=session.get("username", "") if logged_in else "",
     )
 
+
 @vault_bp.get("/register")
 def register_page() -> ResponseReturnValue:
     if "uid" in session:
         return redirect(url_for("vault.index"))
     return _page("vault.html", logged_in=False, show_register=True, username="")
+
+
+# ── Auth API ──────────────────────────────────────────────────────────────────
 
 @vault_bp.post("/api/register")
 def api_register() -> ResponseReturnValue:
@@ -62,6 +69,7 @@ def api_register() -> ResponseReturnValue:
         return jsonify(result), 409 if "already exists" in result["error"] else 400
     return jsonify({"message": "Account created"}), 201
 
+
 @vault_bp.post("/api/login")
 def api_login() -> ResponseReturnValue:
     body   = request.get_json(silent=True) or {}
@@ -70,6 +78,7 @@ def api_login() -> ResponseReturnValue:
         return jsonify(result), 401
     return jsonify({"message": "ok", "username": result["username"]})
 
+
 @vault_bp.post("/api/logout")
 def api_logout() -> ResponseReturnValue:
     uid = session.get("uid", "anonymous")
@@ -77,10 +86,14 @@ def api_logout() -> ResponseReturnValue:
     logger.info("User logged out: uid=%s", uid)
     return jsonify({"message": "ok"})
 
+
+# ── Passwords API ─────────────────────────────────────────────────────────────
+
 @vault_bp.get("/api/passwords")
 @login_required
 def api_list() -> ResponseReturnValue:
     return jsonify(list_passwords(session["uid"]))
+
 
 @vault_bp.post("/api/passwords")
 @login_required
@@ -91,6 +104,7 @@ def api_add() -> ResponseReturnValue:
     pid = add_password(session["uid"], body)
     return jsonify({"message": "Saved", "id": pid}), 201
 
+
 @vault_bp.put("/api/passwords/<pid>")
 @login_required
 def api_update(pid: str) -> ResponseReturnValue:
@@ -100,16 +114,25 @@ def api_update(pid: str) -> ResponseReturnValue:
     update_password(session["uid"], pid, body)
     return jsonify({"message": "Updated"})
 
+
 @vault_bp.delete("/api/passwords/<pid>")
 @login_required
 def api_delete(pid: str) -> ResponseReturnValue:
     delete_password(session["uid"], pid)
     return jsonify({"message": "Deleted"})
 
+
 @vault_bp.post("/api/passwords/<pid>/copy")
 @login_required
 def api_copy(pid: str) -> ResponseReturnValue:
-    pwd = get_decrypted_password(session["uid"], pid)
+    try:
+        pwd = get_decrypted_password(session["uid"], pid)
+    except InvalidToken:
+        logger.error(
+            "Decryption failure on copy for pid=%s uid=%s", pid, session["uid"]
+        )
+        return jsonify({"error": "Decryption failed — data may be corrupt"}), 500
+
     if pwd is None:
         return jsonify({"error": "Not found"}), 404
     return jsonify({"password": pwd})
