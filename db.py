@@ -42,8 +42,14 @@ def _init_firebase() -> firestore.Client:
     cred_json = current_app.config.get("FIREBASE_CREDENTIALS_JSON", "").strip()
     cred_path = current_app.config.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
 
+    # Also handle the case where GOOGLE_APPLICATION_CREDENTIALS contains raw JSON
+    # (instead of a file path), which happens when pasting JSON into Cloud Run env vars.
+    if not cred_json and cred_path and cred_path.strip().startswith("{"):
+        cred_json = cred_path
+        cred_path = ""
+
     if cred_json:
-        logger.info("Firebase: initialising from FIREBASE_CREDENTIALS_JSON.")
+        logger.info("Firebase: initialising from JSON credentials.")
         cred = credentials.Certificate(json.loads(cred_json))
     elif cred_path:
         logger.info("Firebase: initialising from credentials file at '%s'.", cred_path)
