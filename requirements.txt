@@ -1,0 +1,30 @@
+# ── Web framework ─────────────────────────────────────────────────────────────
+# Flask 3.1.3 — fixes CVE-2026-27205 (missing Vary: Cookie on some session accesses)
+flask==3.1.3
+
+# ── Production WSGI server ────────────────────────────────────────────────────
+gunicorn==23.0.0
+
+# ── CSRF protection ───────────────────────────────────────────────────────────
+flask-wtf==1.2.2
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+flask-limiter==4.1.1
+
+# ── Firebase / Firestore ──────────────────────────────────────────────────────
+firebase-admin==6.9.0
+
+# ── AES-256 encryption + PBKDF2 key derivation ────────────────────────────────
+# cryptography 42.x had 4 CVEs (incl. HIGH CVE-2026-26007); 46.0.6+ is clean.
+cryptography==46.0.6
+
+# ── GCP Secret Manager ────────────────────────────────────────────────────────
+# OPTIONAL — only imported at runtime when GOOGLE_CLOUD_PROJECT is set.
+# Brings in heavy gRPC/protobuf transitive deps (~30 MB).
+# Remove this line if you supply all secrets via plain environment variables
+# and want to keep the container image smaller.
+google-cloud-secret-manager==2.22.0
+
+# ── TTL cache for derived keys (avoids lru_cache holding secrets indefinitely) ─
+cachetools==5.5.2
+
