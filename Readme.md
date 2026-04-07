@@ -200,9 +200,9 @@ export FLASK_DEBUG="true"
 
 **Windows PowerShell:**
 ```powershell
-$env:FLASK_SECRET_KEY               = "any-local-dev-secret-key"
+$env:FLASK_SECRET_KEY               = "your-random-secret-key-here"
 $env:APP_MASTER_KEY                 = "your-32-char-master-encryption-key!!"
-$env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\firebase-credentials.json"
+$env:GOOGLE_APPLICATION_CREDENTIALS = ".\firebase-credentials.json"
 $env:FLASK_DEBUG                    = "true"
 ```
 
