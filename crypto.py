@@ -8,9 +8,14 @@ Each stored value has its own 16-byte random salt.  The Fernet key is
 derived from APP_MASTER_KEY + that salt using PBKDF2-HMAC-SHA256
 (600 000 iterations — aligned with NIST SP 800-132 / OWASP 2024 guidance).
 
-Key derivation is expensive by design (brute-force resistance), but the
-derived key is cached per (master_key, salt) pair so repeated reads of the
-same record only pay the cost once per process lifetime.
+Key derivation is expensive by design (brute-force resistance).  Derived
+keys are cached with a short TTL (Fix #6) via cachetools.TTLCache rather
+than functools.lru_cache.  lru_cache retains entries — including the master
+key bytes used as cache keys — for the entire process lifetime, increasing
+the blast radius on a memory dump or core file.  TTLCache evicts entries
+after 5 minutes, limiting secret exposure while still providing a meaningful
+performance benefit for repeated reads of the same record within a request
+burst.
 
 Password hashing
 ----------------
@@ -32,8 +37,10 @@ import hmac
 import logging
 import os
 import secrets
-from functools import lru_cache
+import threading
+from typing import Any
 
+from cachetools import TTLCache
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -47,25 +54,42 @@ _PBKDF2_ITERATIONS = 600_000
 # The insecure fallback key value defined in config.py.
 _FALLBACK_MASTER_KEY = "local-dev-fallback-key-not-for-prod!"
 
+# ── TTL-based key cache (Fix #6) ─────────────────────────────────────────────
+# Keys are evicted after 5 minutes so the master key bytes do not persist
+# indefinitely in memory alongside the cached derived keys.
+# maxsize=256 caps memory usage; TTL=300s balances security and performance.
+_KEY_CACHE: TTLCache[tuple[bytes, bytes], bytes] = TTLCache(maxsize=256, ttl=300)
+_KEY_CACHE_LOCK = threading.Lock()
 
-# ── Key derivation (cached) ───────────────────────────────────────────────────
 
-@lru_cache(maxsize=256)
+# ── Key derivation (TTL-cached) ───────────────────────────────────────────────
+
 def _derive_fernet_key(master_key: bytes, salt: bytes) -> bytes:
     """
     Derive a 32-byte Fernet-ready key from master_key + salt.
 
-    Results are cached per (master_key, salt) pair so that repeated reads
-    of the same Firestore document only run PBKDF2 once per process.
-    maxsize=256 caps memory at ~256 × (32 + 16) bytes ≈ 12 KB.
+    Results are cached with a 5-minute TTL (cachetools.TTLCache) so that
+    repeated reads of the same Firestore document only run PBKDF2 once per
+    burst, while limiting how long the master key bytes remain reachable in
+    the process heap alongside the derived key.
     """
+    cache_key = (master_key, salt)
+    with _KEY_CACHE_LOCK:
+        if cache_key in _KEY_CACHE:
+            return _KEY_CACHE[cache_key]
+
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
         iterations=_PBKDF2_ITERATIONS,
     )
-    return base64.urlsafe_b64encode(kdf.derive(master_key))
+    derived = base64.urlsafe_b64encode(kdf.derive(master_key))
+
+    with _KEY_CACHE_LOCK:
+        _KEY_CACHE[cache_key] = derived
+
+    return derived
 
 
 def _master_key() -> bytes:
@@ -74,7 +98,7 @@ def _master_key() -> bytes:
 
     Raises RuntimeError in production if the insecure fallback key is active.
     """
-    key = current_app.config["APP_MASTER_KEY"]
+    key: str = current_app.config["APP_MASTER_KEY"]
     if key == _FALLBACK_MASTER_KEY:
         debug = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
         if not debug:
@@ -102,16 +126,16 @@ def encrypt(plaintext: str) -> dict[str, str]:
     Returns a dict suitable for direct storage in Firestore:
         {"ciphertext": "<base64url>", "salt": "<base64url>"}
     """
-    salt  = secrets.token_bytes(16)
-    key   = _derive_fernet_key(_master_key(), salt)
+    salt = secrets.token_bytes(16)
+    key = _derive_fernet_key(_master_key(), salt)
     token = Fernet(key).encrypt(plaintext.encode("utf-8"))
     return {
         "ciphertext": base64.urlsafe_b64encode(token).decode(),
-        "salt":       base64.urlsafe_b64encode(salt).decode(),
+        "salt": base64.urlsafe_b64encode(salt).decode(),
     }
 
 
-def decrypt(payload: dict[str, str]) -> str:
+def decrypt(payload: dict[str, Any]) -> str:
     """
     Decrypt a {"ciphertext", "salt"} dict returned from Firestore.
 
@@ -125,7 +149,7 @@ def decrypt(payload: dict[str, str]) -> str:
         raise KeyError("Decrypt payload missing 'salt' or 'ciphertext' field")
 
     try:
-        salt  = base64.urlsafe_b64decode(payload["salt"])
+        salt = base64.urlsafe_b64decode(payload["salt"])
         token = base64.urlsafe_b64decode(payload["ciphertext"])
     except Exception as exc:
         raise ValueError("Decrypt payload contains invalid base64 data") from exc
@@ -143,7 +167,7 @@ def hash_password(password: str) -> str:
 
     Returns "hex_salt:hex_hash".  The original password is never stored.
     """
-    salt   = secrets.token_hex(16)
+    salt = secrets.token_hex(16)
     digest = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), salt.encode(), _PBKDF2_ITERATIONS
     )

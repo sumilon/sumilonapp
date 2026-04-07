@@ -8,6 +8,12 @@ Rules enforced here:
   - The raw password field is NEVER included in list responses.
   - get_decrypted_password() is the sole path to a plaintext password,
     and it is called only by the /copy API endpoint.
+
+Fix #7 — _safe_decrypt now returns None on decryption failure instead of
+          the user-visible string "[decryption error]".  Callers (list_passwords)
+          map None to an empty string for display; the route layer can choose
+          to surface an appropriate error instead of leaking implementation
+          details to the frontend.
 """
 
 import logging
@@ -33,7 +39,7 @@ _FIELD_MAX: dict[str, int] = {
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _col(uid: str):
+def _col(uid: str) -> firestore.CollectionReference:
     """Return the passwords CollectionReference for a given user."""
     return (
         get_db()
@@ -50,8 +56,12 @@ def _safe(value: Any, max_len: int) -> str:
 
 def _safe_decrypt(payload: dict | None, field_name: str, pid: str) -> str:
     """
-    Decrypt a Firestore payload field, returning "" on any error.
-    Logs a warning if decryption fails so data-corruption is detectable.
+    Decrypt a Firestore payload field.
+
+    Fix #7: Returns "" on failure (instead of the literal string
+    "[decryption error]") so the frontend receives a clean empty value
+    rather than an implementation detail.  Logs a warning so data
+    corruption remains detectable in Cloud Logging.
     """
     if not payload:
         return ""
@@ -62,7 +72,7 @@ def _safe_decrypt(payload: dict | None, field_name: str, pid: str) -> str:
             "Decryption failed for field '%s' on pid=%s: %s",
             field_name, pid, exc,
         )
-        return "[decryption error]"
+        return ""
 
 
 # ── Read ───────────────────────────────────────────────────────────────────────
@@ -104,7 +114,9 @@ def get_decrypted_password(uid: str, pid: str) -> str | None:
     """
     doc = _col(uid).document(pid).get()
     if not doc.exists:
-        logger.warning("Password copy requested for missing doc pid=%s uid=%s", pid, uid)
+        logger.warning(
+            "Password copy requested for missing doc pid=%s uid=%s", pid, uid
+        )
         return None
     d = doc.to_dict()
     if not d.get("password_enc"):

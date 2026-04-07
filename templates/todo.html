@@ -8,7 +8,7 @@
     <title>To-do</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
+    <style nonce="{{ csp_nonce }}">
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         :root{
           --bg:#f8fafc;--surface:#fff;--border:#e2e8f0;
@@ -253,7 +253,7 @@
 
 <div id="toast" role="alert" aria-live="polite"></div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
     (function () {
       'use strict';
 

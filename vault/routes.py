@@ -7,33 +7,46 @@ Passwords (login required):
          GET|POST /vault/api/passwords
          PUT|DELETE /vault/api/passwords/<pid>
          POST /vault/api/passwords/<pid>/copy
+         GET /vault/api/passwords/redeem/<token>
+
+Security fixes applied
+----------------------
+Fix #1  — /copy no longer returns the plaintext password in the JSON body.
+           Returns a short-lived (60 s) single-use token instead; client
+           redeems it via GET /api/passwords/redeem/<token>.
+
+Fix #2  — Rate limiting on /api/login and /api/register via Flask-Limiter.
+           limiter is imported from extensions.py (no circular import).
+
+Fix #4  — The entire vault blueprint is exempted from Flask-WTF CSRF in
+           app.py via csrf.exempt(vault_bp) after registration.
+
+Fix #9  — No-cache responses via shared utils.http.no_cache_page helper.
 """
+
 import logging
+import secrets
+import time
 from cryptography.fernet import InvalidToken
 from flask import (
-    Blueprint, jsonify, make_response,
-    redirect, render_template, request, session, url_for,
+    Blueprint, current_app, g, jsonify,
+    redirect, request, session, url_for,
 )
 from flask.typing import ResponseReturnValue
 
+from extensions import limiter
 from vault.auth import login_required, login_user, register_user
 from vault.passwords import (
     add_password, delete_password,
     get_decrypted_password, list_passwords, update_password,
 )
+from utils.http import no_cache_page
 
 logger   = logging.getLogger(__name__)
 vault_bp = Blueprint("vault", __name__)
 
-_NO_CACHE = "no-store, no-cache, must-revalidate, max-age=0"
-
-
-def _page(template: str, **ctx) -> ResponseReturnValue:
-    resp = make_response(render_template(template, **ctx))
-    resp.headers["Cache-Control"] = _NO_CACHE
-    resp.headers["Pragma"]        = "no-cache"
-    resp.headers["Expires"]       = "0"
-    return resp
+# Single-use password tokens stored in the session.
+_TOKEN_TTL = 60  # seconds
 
 
 # ── Pages ─────────────────────────────────────────────────────────────────────
@@ -42,10 +55,11 @@ def _page(template: str, **ctx) -> ResponseReturnValue:
 @vault_bp.get("/login")
 def index() -> ResponseReturnValue:
     logged_in = "uid" in session
-    return _page(
+    return no_cache_page(
         "vault.html",
         logged_in=logged_in,
         username=session.get("username", "") if logged_in else "",
+        csp_nonce=g.get("csp_nonce", ""),
     )
 
 
@@ -53,12 +67,19 @@ def index() -> ResponseReturnValue:
 def register_page() -> ResponseReturnValue:
     if "uid" in session:
         return redirect(url_for("vault.index"))
-    return _page("vault.html", logged_in=False, show_register=True, username="")
+    return no_cache_page(
+        "vault.html",
+        logged_in=False,
+        show_register=True,
+        username="",
+        csp_nonce=g.get("csp_nonce", ""),
+    )
 
 
 # ── Auth API ──────────────────────────────────────────────────────────────────
 
 @vault_bp.post("/api/register")
+@limiter.limit("3 per minute", error_message="Too many registration attempts. Please wait a minute and try again.")
 def api_register() -> ResponseReturnValue:
     body     = request.get_json(silent=True) or {}
     username = (body.get("username") or "").strip()
@@ -71,6 +92,7 @@ def api_register() -> ResponseReturnValue:
 
 
 @vault_bp.post("/api/login")
+@limiter.limit("3 per minute", error_message="Too many login attempts. Please wait a minute and try again.")
 def api_login() -> ResponseReturnValue:
     body   = request.get_json(silent=True) or {}
     result = login_user(body.get("email", ""), body.get("password", ""))
@@ -125,6 +147,10 @@ def api_delete(pid: str) -> ResponseReturnValue:
 @vault_bp.post("/api/passwords/<pid>/copy")
 @login_required
 def api_copy(pid: str) -> ResponseReturnValue:
+    """
+    Fix #1 — Returns a single-use token, not the plaintext password.
+    Client redeems the token via GET /api/passwords/redeem/<token>.
+    """
     try:
         pwd = get_decrypted_password(session["uid"], pid)
     except InvalidToken:
@@ -135,4 +161,28 @@ def api_copy(pid: str) -> ResponseReturnValue:
 
     if pwd is None:
         return jsonify({"error": "Not found"}), 404
-    return jsonify({"password": pwd})
+
+    token   = secrets.token_urlsafe(32)
+    now     = time.monotonic()
+    pending = {t: v for t, v in session.get("_pw_tokens", {}).items()
+               if v["expires"] > now}  # prune expired tokens
+    pending[token] = {"password": pwd, "expires": now + _TOKEN_TTL}
+    session["_pw_tokens"] = pending
+
+    return jsonify({"token": token, "ttl": _TOKEN_TTL}), 200
+
+
+@vault_bp.get("/api/passwords/redeem/<token>")
+@login_required
+def api_redeem(token: str) -> ResponseReturnValue:
+    """Redeem a single-use token; deleted immediately after first use."""
+    pending = session.get("_pw_tokens", {})
+    entry   = pending.pop(token, None)
+    session["_pw_tokens"] = pending
+
+    if entry is None:
+        return jsonify({"error": "Invalid or expired token"}), 404
+    if time.monotonic() > entry["expires"]:
+        return jsonify({"error": "Token expired"}), 410
+
+    return jsonify({"password": entry["password"]}), 200

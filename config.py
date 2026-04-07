@@ -10,18 +10,7 @@ Secret resolution order (first match wins):
   2. Environment variable — local dev or Cloud Run plain-env fallback
   3. Hard-coded safe default — local dev only (never used in production)
 
-HOW TO SET SECRETS — GCP Console, no CLI required:
-  Option A  Plain environment variables (simplest):
-    Cloud Run → Edit Revision → Variables & Secrets tab → add:
-      FLASK_SECRET_KEY          any 64-char random string
-      APP_MASTER_KEY            any 32+ char string
-      FIREBASE_CREDENTIALS_JSON full contents of firebase-credentials.json
-
-  Option B  GCP Secret Manager (more secure):
-    Secret Manager → create secrets:
-      flask-secret-key, app-master-key, firebase-creds
-    IAM → grant Cloud Run service account: roles/secretmanager.secretAccessor
-    Cloud Run → Variables & Secrets tab → reference each secret as an env var
+HOW TO SET SECRETS — see .env.example for variable names.
 """
 
 import logging
@@ -76,6 +65,18 @@ class Config:
             )
             self.SESSION_LIFETIME_HOURS = 8
 
+        # Rate limit for auth endpoints (requests per minute per IP).
+        # After 3 attempts the IP is blocked for 1 minute.
+        try:
+            self.AUTH_RATE_LIMIT: int = int(
+                os.environ.get("AUTH_RATE_LIMIT", "3")
+            )
+        except ValueError:
+            logger.warning(
+                "AUTH_RATE_LIMIT is not a valid integer — defaulting to 3."
+            )
+            self.AUTH_RATE_LIMIT = 3
+
     @staticmethod
     def _resolve(env_var: str, secret_name: str, fallback: str) -> str:
         """
@@ -108,9 +109,9 @@ class Config:
         Returns "" (never raises) if unavailable for any reason.
         """
         project = (
-            os.environ.get("GOOGLE_CLOUD_PROJECT")
-            or os.environ.get("GCP_PROJECT")
-            or ""
+                os.environ.get("GOOGLE_CLOUD_PROJECT")
+                or os.environ.get("GCP_PROJECT")
+                or ""
         )
         if not project:
             return ""

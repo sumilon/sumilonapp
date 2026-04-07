@@ -5,15 +5,38 @@ These are the canonical implementations. The JavaScript in the template
 mirrors these exactly so client-side results match server-side results.
 
 All functions raise ValueError on invalid inputs.
+
+Fixes applied
+-------------
+Fix #10 — indian_format now raises TypeError on None instead of silently
+           returning "0.00", making the behaviour consistent with _positive().
+           The parameter is typed as float and documented explicitly.
+
+Fix #11 — calc_swp documents and handles the edge case where the initial
+           withdrawal exceeds the corpus immediately.
 """
 
 from __future__ import annotations
 
 
 def indian_format(num: float) -> str:
-    """Format a number in Indian number system (e.g. 1,23,456.78)."""
+    """
+    Format a number in Indian number system (e.g. 1,23,456.78).
+
+    Fix #10: Raises TypeError if num is None so callers cannot silently
+    pass None and get back "0.00" — a value that looks valid but is wrong.
+
+    Args:
+        num: A finite float or int.  Must not be None.
+
+    Returns:
+        A string formatted with Indian-style comma grouping and 2 decimal places.
+
+    Raises:
+        TypeError: If num is None.
+    """
     if num is None:
-        return "0.00"
+        raise TypeError("indian_format() requires a float, got None")
     negative = num < 0
     num = abs(round(num, 2))
     integer, decimal = f"{num:.2f}".split(".")
@@ -105,24 +128,45 @@ def calc_swp(
     principal: float, withdraw: float,
     rate: float, inflation: float, years: int,
 ) -> dict:
-    """Systematic Withdrawal Plan with optional inflation adjustment."""
+    """
+    Systematic Withdrawal Plan with optional inflation adjustment.
+
+    Fix #11: Documents and handles the edge case where withdraw >= principal
+    on the very first month.  In this scenario the corpus is depleted
+    immediately: total_out equals principal, final_value is 0.
+
+    Args:
+        principal:  Starting corpus (> 0).
+        withdraw:   Initial monthly withdrawal amount (> 0).
+        rate:       Expected annual return rate in % (> 0).
+        inflation:  Annual inflation rate applied to withdraw each month (>= 0).
+        years:      Investment horizon in years (> 0).
+
+    Raises:
+        ValueError: If principal, withdraw, rate, or years are <= 0,
+                    or if inflation is negative.
+    """
     _positive(principal, withdraw, rate, years)
     if inflation < 0:
         raise ValueError("Inflation cannot be negative")
+
     mr  = rate / 100 / 12
     mir = inflation / 100 / 12
     bal, total_out, cur = principal, 0.0, withdraw
+
     for _ in range(years * 12):
         bal += bal * mr
         if bal <= 0:
             break
         if bal <= cur:
+            # Corpus exhausted — pay out the remainder.
             total_out += bal
             bal = 0.0
             break
         bal       -= cur
         total_out += cur
         cur       *= (1 + mir)
+
     return {
         "investment":  round(principal, 2),
         "withdrawal":  round(total_out, 2),

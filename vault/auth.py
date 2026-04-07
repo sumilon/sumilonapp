@@ -3,6 +3,12 @@ vault/auth.py — User registration, login, and the login_required decorator.
 
 All Firestore writes for the users collection go through this module.
 The passwords sub-collection is handled separately in vault/passwords.py.
+
+Fixes applied
+-------------
+Fix #8 — register_user now uses a Firestore transaction to atomically check
+          for an existing email and write the new user document, eliminating
+          the TOCTOU race between the existence check and the write.
 """
 
 import logging
@@ -29,11 +35,11 @@ _MAX_USERNAME_LEN = 120
 _MAX_PASSWORD_LEN = 256
 
 # Minimum password complexity requirements (server-side enforcement).
-_PW_MIN_LEN    = 8
-_PW_UPPER_RE   = re.compile(r"[A-Z]")
-_PW_LOWER_RE   = re.compile(r"[a-z]")
-_PW_DIGIT_RE   = re.compile(r"\d")
-_PW_SYMBOL_RE  = re.compile(r"[^A-Za-z0-9]")
+_PW_MIN_LEN   = 8
+_PW_UPPER_RE  = re.compile(r"[A-Z]")
+_PW_LOWER_RE  = re.compile(r"[a-z]")
+_PW_DIGIT_RE  = re.compile(r"\d")
+_PW_SYMBOL_RE = re.compile(r"[^A-Za-z0-9]")
 
 
 # ── Decorator ─────────────────────────────────────────────────────────────────
@@ -54,7 +60,7 @@ def login_required(f):
 # ── Input validation ──────────────────────────────────────────────────────────
 
 def _validate_registration(
-        username: str, email: str, password: str
+    username: str, email: str, password: str
 ) -> str | None:
     """
     Server-side input validation for registration.
@@ -92,7 +98,11 @@ def _validate_registration(
 
 def register_user(username: str, email: str, password: str) -> dict[str, Any]:
     """
-    Create a new user document in Firestore.
+    Create a new user document in Firestore atomically (Fix #8).
+
+    Uses a Firestore transaction to eliminate the TOCTOU race between the
+    duplicate-email check and the document write.  If two concurrent requests
+    attempt to register the same email, exactly one will succeed.
 
     Stored fields:
       uid           — random 32-hex ID (plain; locates sub-collections)
@@ -111,27 +121,46 @@ def register_user(username: str, email: str, password: str) -> dict[str, Any]:
     if error:
         return {"error": error}
 
-    db = get_db()
+    db  = get_db()
+    uid = secrets.token_hex(16)
+    user_ref = db.collection("users").document(uid)
 
-    # Use FieldFilter to avoid the deprecated positional .where() API
-    existing = (
-        db.collection("users")
-        .where(filter=FieldFilter("email", "==", email))
-        .limit(1)
-        .get()
-    )
-    if existing:
+    @firestore.transactional
+    def _create_in_transaction(transaction) -> bool:
+        """
+        Within a single transaction:
+          1. Query for an existing account with this email.
+          2. If found, abort (return False).
+          3. Otherwise write the new user document and return True.
+
+        Firestore transactions guarantee that no other write can slip in
+        between steps 1 and 3.
+        """
+        existing = (
+            db.collection("users")
+            .where(filter=FieldFilter("email", "==", email))
+            .limit(1)
+            .get(transaction=transaction)
+        )
+        if existing:
+            return False
+
+        transaction.set(user_ref, {
+            "uid":           uid,
+            "email":         email,
+            "email_enc":     encrypt(email),
+            "username_enc":  encrypt(username),
+            "password_hash": hash_password(password),
+            "created_at":    firestore.SERVER_TIMESTAMP,
+        })
+        return True
+
+    transaction = db.transaction()
+    created = _create_in_transaction(transaction)
+
+    if not created:
         return {"error": "An account with this email already exists"}
 
-    uid = secrets.token_hex(16)
-    db.collection("users").document(uid).set({
-        "uid":           uid,
-        "email":         email,
-        "email_enc":     encrypt(email),
-        "username_enc":  encrypt(username),
-        "password_hash": hash_password(password),
-        "created_at":    firestore.SERVER_TIMESTAMP,
-    })
     logger.info("New user registered: uid=%s", uid)
     return {"ok": True}
 

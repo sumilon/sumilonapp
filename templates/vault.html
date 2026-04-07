@@ -11,8 +11,7 @@
     <title>Vault</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        /* ── Reset & tokens ── */
+    <style nonce="{{ csp_nonce }}">
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
         :root{
           --bg:#f1f5f9;--surface:#fff;--border:#e2e8f0;
@@ -24,9 +23,13 @@
         }
         body{font-family:'Inter',system-ui,sans-serif;font-size:15px;background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;min-height:100vh}
 
-        /* ── Auth view (centred card) ── */
-        #auth-view{
-          display:flex;align-items:center;justify-content:center;
+        /* ── View switching — only one top-level view visible at a time ── */
+        .view { display: none; }
+        .view.active { display: flex; }
+
+        /* ── Auth view ── */
+        #auth-view {
+          align-items:center;justify-content:center;
           min-height:100vh;padding:20px;
           background:linear-gradient(135deg,#eef2ff 0%,#f1f5f9 55%,#faf5ff 100%);
         }
@@ -35,6 +38,11 @@
           border-radius:var(--r-lg);padding:36px 32px;
           box-shadow:var(--sh-md);animation:fadeUp .3s ease;
         }
+
+        /* ── Within the auth card: only one panel shows at a time ── */
+        .auth-panel { display: none; }
+        .auth-panel.active { display: block; }
+
         .logo{text-align:center;margin-bottom:28px}
         .logo-mark{
           width:48px;height:48px;border-radius:13px;margin:0 auto 10px;
@@ -46,9 +54,8 @@
         .logo p{font-size:.82rem;color:var(--muted);margin-top:3px}
         .auth-title{font-size:1rem;font-weight:700;margin-bottom:18px}
 
-        /* ── App view (full page) ── */
-        #app-view{display:none;flex-direction:column;min-height:100vh}
-        #app-view.visible{display:flex}
+        /* ── App view ── */
+        #app-view { flex-direction:column; min-height:100vh; }
 
         /* Topbar */
         .topbar{
@@ -72,19 +79,15 @@
         }
         .btn-out:hover{background:#fee2e2}
 
-        /* Content area */
         .content{flex:1;padding:20px;max-width:900px;width:100%;margin:0 auto}
 
-        /* Toolbar */
         .toolbar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}
         .search-wrap{flex:1;min-width:140px;position:relative}
         .search-wrap input{padding-left:34px;width:100%}
         .s-icon{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:.8rem;pointer-events:none}
         .count-lbl{font-size:.78rem;color:var(--muted);align-self:center;white-space:nowrap}
 
-        /* Password list — single column, stacked */
         .pw-grid{display:flex;flex-direction:column;gap:8px;max-width:720px}
-
         .pw-card{
           background:var(--surface);border:1.5px solid var(--border);
           border-radius:var(--r-lg);padding:14px 18px;
@@ -104,7 +107,6 @@
         .pw-url{font-size:.72rem;color:var(--accent);opacity:.7;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
         .pw-actions{display:flex;gap:6px;flex-shrink:0}
 
-        /* ── Shared form elements ── */
         input,select,textarea{
           width:100%;padding:9px 13px;
           border:1.5px solid var(--border);border-radius:var(--r);
@@ -114,12 +116,10 @@
         input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.13)}
         input::placeholder,textarea::placeholder{color:var(--muted);opacity:.65}
         textarea{resize:vertical;min-height:70px}
-        select{cursor:pointer}
 
         .field{margin-bottom:14px}
         .field label{display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:6px}
 
-        /* ── Buttons ── */
         .btn{
           display:inline-flex;align-items:center;gap:6px;
           padding:9px 16px;border:1.5px solid transparent;border-radius:var(--r);
@@ -140,7 +140,6 @@
         .btn-icon{padding:7px 9px}
         .btn-full{width:100%;justify-content:center;padding:11px}
 
-        /* ── Password field with show/hide ── */
         .pw-wrap{position:relative}
         .pw-wrap input{padding-right:58px}
         .vis-btn{
@@ -149,7 +148,27 @@
           color:var(--muted);cursor:pointer;padding:3px 5px;
         }
 
-        /* ── Dialog error banner (shown inside dialog, above backdrop) ── */
+        /* ── Inline auth-card error banner ── */
+        .auth-error{
+          display:none;align-items:center;gap:8px;
+          background:#fef2f2;border:1px solid #fca5a5;color:#7f1d1d;
+          border-radius:var(--r);padding:10px 13px;
+          font-size:.83rem;font-weight:500;margin-bottom:14px;
+        }
+        .auth-error.show{display:flex}
+
+        /* ── Rate-limit lockout banner ── */
+        .lockout-banner{
+          display:none;align-items:center;gap:8px;
+          background:#fff7ed;border:1px solid #fed7aa;color:#7c2d12;
+          border-radius:var(--r);padding:12px 14px;
+          font-size:.84rem;font-weight:500;margin-bottom:14px;
+          flex-direction:column;text-align:center;
+        }
+        .lockout-banner.show{display:flex}
+        .lockout-banner strong{font-size:.95rem}
+        .lockout-timer{font-size:1.3rem;font-weight:700;color:#ea580c;margin:4px 0}
+
         .dlg-error{
           display:none;align-items:center;gap:8px;
           background:#fef2f2;border:1px solid #fca5a5;color:#7f1d1d;
@@ -158,7 +177,6 @@
         }
         .dlg-error.show{display:flex}
 
-        /* ── Dialog — centred in viewport on all browsers ── */
         dialog{
           background:var(--surface);border:none;border-radius:var(--r-lg);
           padding:26px;width:min(460px,calc(100vw - 32px));
@@ -171,7 +189,6 @@
         .dlg-title{font-size:1rem;font-weight:700;margin-bottom:18px}
         .dlg-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
 
-        /* ── Strength meter ── */
         .str-bar{height:3px;border-radius:2px;background:var(--border);margin-top:6px;overflow:hidden}
         .str-fill{height:100%;border-radius:2px;width:0;transition:width .25s,background .25s}
         .str-lbl{font-size:.7rem;color:var(--muted);margin-top:4px;min-height:1em}
@@ -179,23 +196,15 @@
         .req{font-size:.68rem;padding:2px 7px;border-radius:20px;background:var(--bg);color:var(--muted);transition:all .18s}
         .req.ok{background:#f0fdf4;color:var(--success)}
 
-        /* ── Auth toggle link ── */
         .auth-toggle{text-align:center;margin-top:16px;font-size:.845rem;color:var(--muted)}
         .auth-toggle a{color:var(--accent);font-weight:600;cursor:pointer;text-decoration:none}
         .auth-toggle a:hover{text-decoration:underline}
 
-        /* ── Divider ── */
-        .divider{text-align:center;margin:16px 0;font-size:.8rem;color:var(--muted);position:relative}
-        .divider::before,.divider::after{content:'';position:absolute;top:50%;width:42%;height:1px;background:var(--border)}
-        .divider::before{left:0}.divider::after{right:0}
-
-        /* ── Empty state ── */
-        .empty{text-align:center;padding:52px 20px;color:var(--muted);grid-column:1/-1}
+        .empty{text-align:center;padding:52px 20px;color:var(--muted)}
         .empty-icon{font-size:2rem;margin-bottom:12px;opacity:.4;display:block}
         .empty h3{font-size:1rem;color:var(--text);margin-bottom:6px;font-weight:600}
         .empty p{font-size:.845rem}
 
-        /* ── Toast ── */
         #toast{
           position:fixed;bottom:20px;right:20px;
           padding:11px 16px;border-radius:10px;
@@ -208,15 +217,12 @@
         #toast.error{background:#fef2f2;border:1px solid #fca5a5;color:#7f1d1d}
         #toast.info{background:#eff6ff;border:1px solid #93c5fd;color:#1e3a5f}
 
-        /* ── Spinner ── */
         .spinner{width:14px;height:14px;flex-shrink:0;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
         .copy-ok{background:#f0fdf4!important;color:var(--success)!important;border-color:#86efac!important}
 
-        /* ── Animations ── */
         @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
         @keyframes spin{to{transform:rotate(360deg)}}
 
-        /* ── Mobile tweaks ── */
         @media(max-width:480px){
           .auth-card{padding:28px 22px}
           .topbar{padding:0 14px}
@@ -229,34 +235,61 @@
 </head>
 <body>
 
-<!-- ═══════════════════ AUTH VIEW ═══════════════════ -->
-<div id="auth-view" {% if logged_in %}style="display:none"{% endif %}>
+<!-- ═══════════════════ AUTH VIEW ═══════════════════
+     Only shown when the user is NOT logged in.
+     Only one .auth-panel (login OR register) is visible at a time.
+═══════════════════════════════════════════════════════ -->
+<div id="auth-view" class="view {% if not logged_in %}active{% endif %}">
     <div class="auth-card">
+
         <div class="logo">
             <div class="logo-mark" aria-hidden="true">🔐</div>
             <h1>Vault</h1>
             <p>Your encrypted password manager</p>
         </div>
 
-        <!-- Login form -->
-        <div id="login-form">
+        <!-- ── Login panel ── -->
+        <div id="login-panel" class="auth-panel {% if not (show_register is defined and show_register) %}active{% endif %}">
             <div class="auth-title">Sign in</div>
-            <div class="field"><label for="l-email">Email</label>
-                <input type="email" id="l-email" autocomplete="email" placeholder="you@example.com" required></div>
-            <div class="field"><label for="l-pw">Password</label>
-                <input type="password" id="l-pw" autocomplete="current-password" placeholder="••••••••" required></div>
+
+            <!-- Rate-limit lockout banner (shown client-side after 3 failed attempts) -->
+            <div class="lockout-banner" id="login-lockout" role="alert" aria-live="assertive">
+                <strong>Too many failed attempts</strong>
+                <div class="lockout-timer" id="lockout-timer">60</div>
+                <span>Please wait before trying again</span>
+            </div>
+
+            <!-- Inline error (wrong password, account not found, etc.) -->
+            <div class="auth-error" id="login-error" role="alert" aria-live="assertive"></div>
+
+            <div class="field">
+                <label for="l-email">Email</label>
+                <input type="email" id="l-email" autocomplete="email" placeholder="you@example.com" required>
+            </div>
+            <div class="field">
+                <label for="l-pw">Password</label>
+                <input type="password" id="l-pw" autocomplete="current-password" placeholder="••••••••" required>
+            </div>
             <button class="btn btn-primary btn-full" id="login-btn" type="button">Sign In</button>
             <div class="auth-toggle">No account? <a id="go-register">Create one →</a></div>
         </div>
 
-        <!-- Register form (hidden by default) -->
-        <div id="register-form" style="display:none">
+        <!-- ── Register panel ── -->
+        <div id="register-panel" class="auth-panel {% if show_register is defined and show_register %}active{% endif %}">
             <div class="auth-title">Create account</div>
-            <div class="field"><label for="r-name">Full Name</label>
-                <input type="text" id="r-name" autocomplete="name" placeholder="Jane Smith" maxlength="120" required></div>
-            <div class="field"><label for="r-email">Email</label>
-                <input type="email" id="r-email" autocomplete="email" placeholder="you@example.com" required></div>
-            <div class="field"><label for="r-pw">Password</label>
+
+            <div class="auth-error" id="register-error" role="alert" aria-live="assertive"></div>
+
+            <div class="field">
+                <label for="r-name">Full Name</label>
+                <input type="text" id="r-name" autocomplete="name" placeholder="Jane Smith" maxlength="120" required>
+            </div>
+            <div class="field">
+                <label for="r-email">Email</label>
+                <input type="email" id="r-email" autocomplete="email" placeholder="you@example.com" required>
+            </div>
+            <div class="field">
+                <label for="r-pw">Password</label>
                 <input type="password" id="r-pw" autocomplete="new-password" placeholder="Choose a strong password" maxlength="256" required>
                 <div class="str-bar"><div class="str-fill" id="str-fill"></div></div>
                 <div class="str-lbl" id="str-lbl"></div>
@@ -268,18 +301,23 @@
                     <span class="req" id="req-sym">Symbol</span>
                 </div>
             </div>
-            <div class="field"><label for="r-confirm">Confirm Password</label>
-                <input type="password" id="r-confirm" autocomplete="new-password" placeholder="Repeat password" maxlength="256" required></div>
+            <div class="field">
+                <label for="r-confirm">Confirm Password</label>
+                <input type="password" id="r-confirm" autocomplete="new-password" placeholder="Repeat password" maxlength="256" required>
+            </div>
             <button class="btn btn-primary btn-full" id="register-btn" type="button">Create Account</button>
             <div class="auth-toggle">Already have an account? <a id="go-login">Sign in →</a></div>
         </div>
-    </div>
-</div>
 
-<!-- ═══════════════════ APP VIEW ═══════════════════ -->
-<div id="app-view" class="{% if logged_in %}visible{% endif %}">
+    </div><!-- /.auth-card -->
+</div><!-- /#auth-view -->
 
-    <!-- Topbar -->
+
+<!-- ═══════════════════ APP VIEW ═══════════════════
+     Only shown after successful login.
+═══════════════════════════════════════════════════════ -->
+<div id="app-view" class="view {% if logged_in %}active{% endif %}">
+
     <header class="topbar">
         <div class="topbar-logo" aria-label="Vault home">
             <div class="topbar-logo-mark" aria-hidden="true">🔐</div>
@@ -290,7 +328,6 @@
         <button class="btn-out" id="signout-btn" type="button">Sign out</button>
     </header>
 
-    <!-- Passwords content -->
     <main class="content">
         <div class="toolbar">
             <div class="search-wrap">
@@ -301,7 +338,6 @@
             <span class="count-lbl" id="count-lbl" aria-live="polite"></span>
             <button class="btn btn-primary" id="add-btn" type="button">+ Add</button>
         </div>
-
         <div class="pw-grid" id="pw-grid" aria-live="polite" aria-label="Saved passwords">
             <div class="empty">
                 <span class="empty-icon" aria-hidden="true">⏳</span>
@@ -309,7 +345,8 @@
             </div>
         </div>
     </main>
-</div>
+</div><!-- /#app-view -->
+
 
 <!-- ═══════════════════ PASSWORD DIALOG ═══════════════════ -->
 <dialog id="pw-dialog" aria-labelledby="dlg-title">
@@ -353,44 +390,74 @@
 
 <div id="toast" role="alert" aria-live="polite"></div>
 
-<script>
+<script nonce="{{ csp_nonce }}">
     (function () {
       'use strict';
 
-      /* ── Server-rendered state ── */
-      const LOGGED_IN   = {{ 'true' if logged_in else 'false' }};
-      const SHOW_REG    = {{ 'true' if show_register is defined and show_register else 'false' }};
-      let   USERNAME    = {{ username|tojson }};
-      let   passwords   = [];
+      /* ── Server-rendered initial state ── */
+      const LOGGED_IN = {{ 'true' if logged_in else 'false' }};
+      let   USERNAME  = {{ username|tojson }};
+      let   passwords = [];
 
-      /* ── DOM shortcuts ── */
+      /* ── Client-side rate-limit state for login (3 attempts, 60 s lockout) ── */
+      const LOGIN_MAX_ATTEMPTS = 3;
+      const LOGIN_LOCKOUT_SECS = 60;
+      let   loginAttempts = 0;
+      let   lockoutTimer  = null;
+
       const $ = id => document.getElementById(id);
 
-      /* ── Bootstrap ── */
+      /* ══════════════════════════════════════════════
+         VIEW SWITCHING
+         Only one of #auth-view / #app-view is .active.
+         Within auth-view, only one .auth-panel is .active.
+      ══════════════════════════════════════════════ */
+
+      function showAuthView(panel) {
+        /* panel: 'login' | 'register' */
+        $('app-view').classList.remove('active');
+        $('auth-view').classList.add('active');
+        showPanel(panel || 'login');
+      }
+
+      function showAppView() {
+        $('auth-view').classList.remove('active');
+        $('app-view').classList.add('active');
+      }
+
+      function showPanel(which) {
+        /* Toggle the two auth panels — only one visible at a time */
+        $('login-panel').classList.toggle('active',    which === 'login');
+        $('register-panel').classList.toggle('active', which === 'register');
+        clearAuthErrors();
+      }
+
+      /* ══════════════════════════════════════════════
+         BOOTSTRAP
+      ══════════════════════════════════════════════ */
+
       document.addEventListener('DOMContentLoaded', () => {
         bindAuth();
         bindApp();
-        if (SHOW_REG) showRegister();
+
         if (LOGGED_IN) {
           $('topbar-user').textContent = USERNAME;
+          showAppView();
           loadPasswords();
+        } else {
+          /* Server may have signalled to open the register panel directly */
+          const openReg = {{ 'true' if (show_register is defined and show_register) else 'false' }};
+          showAuthView(openReg ? 'register' : 'login');
         }
       });
 
-      /* ══════════════ AUTH ══════════════ */
-
-      function showLogin() {
-        $('login-form').style.display    = '';
-        $('register-form').style.display = 'none';
-      }
-      function showRegister() {
-        $('login-form').style.display    = 'none';
-        $('register-form').style.display = '';
-      }
+      /* ══════════════════════════════════════════════
+         AUTH
+      ══════════════════════════════════════════════ */
 
       function bindAuth() {
-        $('go-register').addEventListener('click', showRegister);
-        $('go-login').addEventListener('click', showLogin);
+        $('go-register').addEventListener('click', () => showPanel('register'));
+        $('go-login').addEventListener('click',    () => showPanel('login'));
         $('login-btn').addEventListener('click', doLogin);
         $('register-btn').addEventListener('click', doRegister);
         $('l-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
@@ -398,24 +465,73 @@
         $('r-pw').addEventListener('input', e => checkStrength(e.target.value));
       }
 
+      /* ── Client-side rate-limit lockout (mirrors the 3/min server limit) ── */
+
+      function isLockedOut() {
+        return loginAttempts >= LOGIN_MAX_ATTEMPTS;
+      }
+
+      function startLockout() {
+        const btn    = $('login-btn');
+        const banner = $('login-lockout');
+        const timer  = $('lockout-timer');
+        let   secs   = LOGIN_LOCKOUT_SECS;
+
+        btn.disabled = true;
+        banner.classList.add('show');
+        timer.textContent = secs;
+
+        lockoutTimer = setInterval(() => {
+          secs -= 1;
+          timer.textContent = secs;
+          if (secs <= 0) {
+            clearInterval(lockoutTimer);
+            lockoutTimer    = null;
+            loginAttempts   = 0;
+            btn.disabled    = false;
+            banner.classList.remove('show');
+            clearLoginError();
+          }
+        }, 1000);
+      }
+
       async function doLogin() {
+        if (isLockedOut()) return;
+
         const email = $('l-email').value.trim();
         const pw    = $('l-pw').value;
-        if (!email || !pw) { toast('Please fill in all fields'); return; }
+        if (!email || !pw) { showLoginError('Please fill in all fields'); return; }
 
         const btn = $('login-btn');
         setLoading(btn, 'Signing in…');
         try {
-          const res  = await api('/vault/api/login', { method:'POST', body:{ email, password:pw } });
-          USERNAME   = res.username;
+          const res = await api('/vault/api/login', { method:'POST', body:{ email, password:pw } });
+          /* Success — reset attempt counter, switch to app */
+          loginAttempts = 0;
+          USERNAME = res.username;
           $('topbar-user').textContent = res.username;
-          /* Switch views */
-          $('auth-view').style.display = 'none';
-          $('app-view').classList.add('visible');
+          $('l-email').value = '';
+          $('l-pw').value    = '';
+          clearAuthErrors();
+          showAppView();
           await loadPasswords();
         } catch (err) {
-          toast(err.message || 'Sign in failed');
-        } finally { resetBtn(btn, 'Sign In'); }
+          loginAttempts += 1;
+          const remaining = LOGIN_MAX_ATTEMPTS - loginAttempts;
+
+          if (loginAttempts >= LOGIN_MAX_ATTEMPTS) {
+            /* Hit the limit — show countdown, disable button */
+            startLockout();
+            showLoginError('Account temporarily locked. Please wait 60 seconds.');
+          } else {
+            const hint = remaining === 1
+              ? '1 attempt remaining before temporary lockout.'
+              : `${remaining} attempts remaining.`;
+            showLoginError((err.message || 'Invalid email or password') + ' — ' + hint);
+          }
+        } finally {
+          if (!isLockedOut()) resetBtn(btn, 'Sign In');
+        }
       }
 
       async function doRegister() {
@@ -423,24 +539,31 @@
         const email   = $('r-email').value.trim();
         const pw      = $('r-pw').value;
         const confirm = $('r-confirm').value;
-        if (!name || !email || !pw || !confirm) { toast('All fields are required'); return; }
-        if (pw.length < 8)    { toast('Password must be at least 8 characters'); return; }
-        if (pw !== confirm)   { toast('Passwords do not match'); return; }
+
+        if (!name || !email || !pw || !confirm) { showRegisterError('All fields are required'); return; }
+        if (pw.length < 8)  { showRegisterError('Password must be at least 8 characters'); return; }
+        if (pw !== confirm) { showRegisterError('Passwords do not match'); return; }
 
         const btn = $('register-btn');
         setLoading(btn, 'Creating…');
         try {
           await api('/vault/api/register', { method:'POST', body:{ username:name, email, password:pw } });
-          toast('Account created! Please sign in.', 'success');
-          /* Prefill email and flip to login */
+          /* Pre-fill email and flip to login with success toast */
           $('l-email').value = email;
-          showLogin();
+          showPanel('login');
+          toast('Account created — please sign in', 'success');
         } catch (err) {
-          toast(err.message || 'Registration failed');
+          showRegisterError(err.message || 'Registration failed');
         } finally { resetBtn(btn, 'Create Account'); }
       }
 
-      /* Strength meter */
+      /* ── Auth error helpers ── */
+      function showLoginError(msg)    { const e=$('login-error');    e.textContent=msg; e.classList.add('show'); }
+      function clearLoginError()      { const e=$('login-error');    e.textContent='';  e.classList.remove('show'); }
+      function showRegisterError(msg) { const e=$('register-error'); e.textContent=msg; e.classList.add('show'); }
+      function clearAuthErrors()      { clearLoginError(); const e=$('register-error'); e.textContent=''; e.classList.remove('show'); }
+
+      /* ── Strength meter ── */
       const SC = ['','#ef4444','#f59e0b','#eab308','#10b981','#4f46e5'];
       const SL = ['','Weak','Fair','Good','Strong','Excellent'];
       function checkStrength(v) {
@@ -450,7 +573,7 @@
           {id:'req-sym',ok:/[^A-Za-z0-9]/.test(v)},
         ];
         const s = rules.filter(r=>r.ok).length;
-        rules.forEach(r => $(`${r.id}`).classList.toggle('ok', r.ok));
+        rules.forEach(r => $(r.id).classList.toggle('ok', r.ok));
         const fill = $('str-fill');
         fill.style.cssText = `width:${s*20}%;background:${SC[s]||'transparent'}`;
         const lbl = $('str-lbl');
@@ -458,7 +581,9 @@
         lbl.style.color = SC[s]||'';
       }
 
-      /* ══════════════ APP ══════════════ */
+      /* ══════════════════════════════════════════════
+         APP
+      ══════════════════════════════════════════════ */
 
       function bindApp() {
         $('signout-btn').addEventListener('click', doLogout);
@@ -470,20 +595,17 @@
         $('pw-dialog').addEventListener('click', e => { if (e.target === $('pw-dialog')) closeDialog(); });
         $('pw-dialog').addEventListener('cancel', closeDialog);
 
-        /* Debounced search */
         let t;
         $('search').addEventListener('input', () => { clearTimeout(t); t = setTimeout(render, 160); });
       }
 
       async function doLogout() {
         try { await fetch('/vault/api/logout', { method:'POST' }); } catch { /* ignore */ }
-        $('app-view').classList.remove('visible');
-        $('auth-view').style.display = '';
-        $('topbar-user').textContent = '';
         passwords = [];
+        $('topbar-user').textContent = '';
         $('l-email').value = '';
         $('l-pw').value    = '';
-        showLogin();
+        showAuthView('login');
       }
 
       /* ── Passwords ── */
@@ -492,7 +614,7 @@
           passwords = await api('/vault/api/passwords');
           render();
         } catch (err) {
-          if (err.message.includes('401')) { doLogout(); return; }
+          if (err.message && err.message.includes('401')) { doLogout(); return; }
           toast('Failed to load passwords');
         }
       }
@@ -506,11 +628,9 @@
               (p.site_url||'').toLowerCase().includes(q))
           : passwords;
 
-        if (q) {
-          $('count-lbl').textContent = `${list.length} of ${passwords.length}`;
-        } else {
-          $('count-lbl').textContent = passwords.length ? `${passwords.length} saved` : '';
-        }
+        $('count-lbl').textContent = q
+          ? `${list.length} of ${passwords.length}`
+          : (passwords.length ? `${passwords.length} saved` : '');
 
         const grid = $('pw-grid');
         if (!list.length) {
@@ -552,23 +672,22 @@
 
       async function copyPw(id, btn) {
         try {
-          const data = await api(`/vault/api/passwords/${id}/copy`, { method:'POST' });
-          await navigator.clipboard.writeText(data.password);
+          const tokenData = await api(`/vault/api/passwords/${id}/copy`, { method:'POST' });
+          const pwData    = await api(`/vault/api/passwords/redeem/${tokenData.token}`, { method:'GET' });
+          await navigator.clipboard.writeText(pwData.password);
           btn.classList.add('copy-ok');
           btn.textContent = '✓ Copied';
           setTimeout(() => { btn.classList.remove('copy-ok'); btn.textContent = '📋 Copy'; }, 2000);
         } catch (err) {
           if (err instanceof DOMException && err.name === 'NotAllowedError') {
             toast('Clipboard access denied — allow clipboard permission in your browser');
-          } else if (err.message && err.message.startsWith('HTTP')) {
-            toast(err.message);
           } else {
-            toast('Failed to copy password');
+            toast(err.message?.startsWith('HTTP') ? err.message : 'Failed to copy password');
           }
         }
       }
 
-      /* ── Dialog ── */
+      /* ── Dialogs ── */
       function resetForm() {
         ['f-id','f-site','f-url','f-user','f-pw','f-notes'].forEach(id => { $(id).value = ''; });
         $('f-pw').type = 'password';
@@ -633,25 +752,13 @@
         } catch (err) { toast(err.message || 'Delete failed'); }
       }
 
-      /* ── Delete confirmation dialog ── */
       function confirmDelete(name) {
         return new Promise(resolve => {
           $('del-dlg-name').textContent = name;
           $('del-dialog').showModal();
-
-          $('del-confirm').addEventListener('click', () => {
-            $('del-dialog').close();
-            resolve(true);
-          }, { once: true });
-
-          $('del-cancel').addEventListener('click', () => {
-            $('del-dialog').close();
-            resolve(false);
-          }, { once: true });
-
-          $('del-dialog').addEventListener('cancel', () => {
-            resolve(false);
-          }, { once: true });
+          $('del-confirm').addEventListener('click', () => { $('del-dialog').close(); resolve(true);  }, { once:true });
+          $('del-cancel').addEventListener('click',  () => { $('del-dialog').close(); resolve(false); }, { once:true });
+          $('del-dialog').addEventListener('cancel', () => { resolve(false); }, { once:true });
         });
       }
 
@@ -659,32 +766,24 @@
       function toggleVis() {
         const inp = $('f-pw'), btn = $('vis-btn');
         const hide = inp.type === 'password';
-        inp.type        = hide ? 'text'  : 'password';
-        btn.textContent = hide ? 'Hide'  : 'Show';
+        inp.type        = hide ? 'text'     : 'password';
+        btn.textContent = hide ? 'Hide'     : 'Show';
       }
       function genPw() {
-        const upper   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-        const lower   = 'abcdefghijklmnopqrstuvwxyz';
-        const digits  = '0123456789';
-        const symbols = '!@#$%^&*()-_=+';
-        const all     = upper + lower + digits + symbols;
-
-        // Guarantee at least one of each class, then pad to 24 chars total.
-        const pick = (src) => src[crypto.getRandomValues(new Uint8Array(1))[0] % src.length];
+        const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', lower = 'abcdefghijklmnopqrstuvwxyz';
+        const digits = '0123456789', symbols = '!@#$%^&*()-_=+';
+        const all = upper + lower + digits + symbols;
+        const pick = src => src[crypto.getRandomValues(new Uint8Array(1))[0] % src.length];
         const mandatory = [pick(upper), pick(lower), pick(digits), pick(symbols)];
-
-        const rest = Array.from(crypto.getRandomValues(new Uint8Array(20)),
-                                b => all[b % all.length]);
-        // Shuffle mandatory + rest together using Fisher-Yates.
+        const rest = Array.from(crypto.getRandomValues(new Uint8Array(20)), b => all[b % all.length]);
         const chars = [...mandatory, ...rest];
         for (let i = chars.length - 1; i > 0; i--) {
           const j = crypto.getRandomValues(new Uint8Array(1))[0] % (i + 1);
           [chars[i], chars[j]] = [chars[j], chars[i]];
         }
-
-        $('f-pw').value           = chars.join('');
-        $('f-pw').type            = 'text';
-        $('vis-btn').textContent  = 'Hide';
+        $('f-pw').value = chars.join('');
+        $('f-pw').type = 'text';
+        $('vis-btn').textContent = 'Hide';
         toast('Strong password generated', 'info');
       }
 
@@ -707,16 +806,8 @@
         _tt = setTimeout(() => { el.className = ''; }, 3500);
       }
 
-      /* Show error inside dialog (never hidden behind backdrop) */
-      function dlgError(msg) {
-        const el = $('dlg-error');
-        el.textContent = msg;
-        el.classList.add('show');
-      }
-      function dlgErrorClear() {
-        const el = $('dlg-error');
-        if (el) { el.textContent = ''; el.classList.remove('show'); }
-      }
+      function dlgError(msg)  { const e=$('dlg-error'); e.textContent=msg; e.classList.add('show'); }
+      function dlgErrorClear(){ const e=$('dlg-error'); if(e){e.textContent=''; e.classList.remove('show');} }
 
       function setLoading(btn, label) {
         btn.disabled = true;

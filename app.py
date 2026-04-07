@@ -15,16 +15,32 @@ No page links to any other page.
 Gunicorn entry point: app:app
   The module-level `app` object is created once at import time so
   Gunicorn can locate it with the standard `module:object` syntax.
+
+Security improvements in this revision
+---------------------------------------
+  Fix #3  — CSP uses per-request nonces instead of 'unsafe-inline'.
+  Fix #4  — Flask-WTF CSRF protection enabled globally; the vault blueprint
+             (all JSON APIs) is exempted via csrf.exempt(vault_bp) after
+             registration — JSON APIs rely on Content-Type: application/json
+             + SameSite=Lax as the CSRF mitigation.
+  Fix #2  — Flask-Limiter applied to auth endpoints (see vault/routes.py).
+
+Circular-import fix
+-------------------
+  csrf and limiter now live in extensions.py so blueprints can import
+  them without importing app.py (which would cause a circular import).
 """
 
 import logging
 import os
+import secrets
 from datetime import timedelta
 
-from flask import Flask, jsonify
+from flask import Flask, g, jsonify
 from flask.typing import ResponseReturnValue
 
 from config import Config
+from extensions import csrf, limiter
 from portfolio.routes  import portfolio_bp
 from calculator.routes import calculator_bp
 from todo.routes       import todo_bp
@@ -57,12 +73,18 @@ def create_app() -> Flask:
         APP_MASTER_KEY=cfg.APP_MASTER_KEY,
         FIREBASE_CREDENTIALS_JSON=cfg.FIREBASE_CREDENTIALS_JSON,
         GOOGLE_APPLICATION_CREDENTIALS=cfg.GOOGLE_APPLICATION_CREDENTIALS,
+        AUTH_RATE_LIMIT=cfg.AUTH_RATE_LIMIT,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=not cfg.DEBUG,
         SESSION_COOKIE_NAME="vs",
         PERMANENT_SESSION_LIFETIME=timedelta(hours=cfg.SESSION_LIFETIME_HOURS),
+        WTF_CSRF_TIME_LIMIT=3600,
     )
+
+    # ── Extensions ────────────────────────────────────────────────────────────
+    csrf.init_app(flask_app)
+    limiter.init_app(flask_app)
 
     # ── Blueprints ────────────────────────────────────────────────────────────
     flask_app.register_blueprint(portfolio_bp,  url_prefix="")
@@ -70,11 +92,28 @@ def create_app() -> Flask:
     flask_app.register_blueprint(todo_bp,       url_prefix="/todo")
     flask_app.register_blueprint(vault_bp,      url_prefix="/vault")
 
+    # Fix #4 — Exempt the entire vault blueprint from CSRF token checks.
+    # All vault routes are JSON APIs; they use Content-Type: application/json
+    # + SameSite=Lax cookies as the CSRF mitigation (correct for JSON APIs).
+    # csrf.exempt() accepts a Blueprint and marks every view registered on it.
+    csrf.exempt(vault_bp)
+
     # ── Health probe ──────────────────────────────────────────────────────────
     @flask_app.get("/health")
     def health() -> ResponseReturnValue:
         """Cloud Run liveness/readiness probe — no DB, no auth."""
         return jsonify({"status": "ok"}), 200
+
+    # ── Per-request CSP nonce (Fix #3) ────────────────────────────────────────
+    @flask_app.before_request
+    def _set_csp_nonce() -> None:
+        """
+        Generate a fresh cryptographic nonce for every request.
+        Templates access it via {{ g.csp_nonce }}.
+        The nonce is embedded in the CSP header below and in every <script>
+        and <style> tag, replacing 'unsafe-inline'.
+        """
+        g.csp_nonce = secrets.token_urlsafe(16)
 
     # ── Security headers ──────────────────────────────────────────────────────
     @flask_app.after_request
@@ -85,20 +124,19 @@ def create_app() -> Flask:
         h["Referrer-Policy"]         = "strict-origin-when-cross-origin"
         h["X-XSS-Protection"]        = "1; mode=block"
         h["Permissions-Policy"]      = "geolocation=(), camera=(), microphone=()"
-        # HSTS: tell browsers to only connect over HTTPS for 1 year.
-        # Only sent in production (when SESSION_COOKIE_SECURE is True).
+
         if not cfg.DEBUG:
-            h["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains"
-            )
+            h["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        nonce = getattr(g, "csp_nonce", "")
         h["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-            "style-src 'self' 'unsafe-inline' "
-            "https://fonts.googleapis.com https://cdn.jsdelivr.net; "
-            "font-src https://fonts.gstatic.com; "
-            "img-src 'self' data:; "
-            "connect-src 'self';"
+            f"default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+            f"style-src 'self' 'nonce-{nonce}' "
+            f"https://fonts.googleapis.com https://cdn.jsdelivr.net; "
+            f"font-src https://fonts.gstatic.com; "
+            f"img-src 'self' data:; "
+            f"connect-src 'self';"
         )
         return response
 
@@ -106,6 +144,10 @@ def create_app() -> Flask:
     @flask_app.errorhandler(404)
     def not_found(e) -> ResponseReturnValue:
         return jsonify({"error": "Not found"}), 404
+
+    @flask_app.errorhandler(429)
+    def rate_limited(e) -> ResponseReturnValue:
+        return jsonify({"error": "Too many requests — please wait and try again"}), 429
 
     @flask_app.errorhandler(500)
     def internal_error(e) -> ResponseReturnValue:
@@ -117,7 +159,6 @@ def create_app() -> Flask:
 
 
 # Module-level app object — required by Gunicorn (`gunicorn app:app`).
-# create_app() is called once at import time.
 app = create_app()
 
 

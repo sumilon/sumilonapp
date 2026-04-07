@@ -1,18 +1,20 @@
-"""todo/routes.py — serves GET /todo (localStorage-only, no API needed)"""
+"""
+todo/routes.py — serves GET /todo (localStorage-only, no API needed).
+
+Fix #9  — No-cache response uses the shared utils.http.no_cache_page helper.
+Fix #12 — Redundant @todo_bp.get("") registration removed; Flask normalises
+           the trailing-slash behaviour via the url_prefix="/todo" in app.py.
+"""
 import logging
-from flask import Blueprint, make_response, render_template
+from flask import Blueprint, g
 from flask.typing import ResponseReturnValue
+
+from utils.http import no_cache_page
 
 logger  = logging.getLogger(__name__)
 todo_bp = Blueprint("todo", __name__)
 
-_NO_CACHE = "no-store, no-cache, must-revalidate, max-age=0"
 
 @todo_bp.get("/")
-@todo_bp.get("")
 def todo_page() -> ResponseReturnValue:
-    resp = make_response(render_template("todo.html"))
-    resp.headers["Cache-Control"] = _NO_CACHE
-    resp.headers["Pragma"]        = "no-cache"
-    resp.headers["Expires"]       = "0"
-    return resp
+    return no_cache_page("todo.html", csp_nonce=g.get("csp_nonce", ""))
