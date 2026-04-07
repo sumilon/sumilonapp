@@ -176,10 +176,14 @@ After granting IAM access, link each secret to an environment variable in Cloud 
 ### Step 1 — Install Dependencies
 
 ```bash
-cd app/
+# Create and activate a virtual environment (recommended)
 python -m venv venv
-source venv/bin/activate        # macOS / Linux
-venv\Scripts\activate           # Windows
+
+# macOS / Linux
+source venv/bin/activate
+
+# Windows PowerShell
+venv\Scripts\activate
 
 pip install -r requirements.txt
 ```
@@ -188,26 +192,29 @@ pip install -r requirements.txt
 
 **macOS / Linux:**
 ```bash
-export GOOGLE_APPLICATION_CREDENTIALS="./firebase-credentials.json"
 export FLASK_SECRET_KEY="any-local-dev-secret-key"
 export APP_MASTER_KEY="your-32-char-master-encryption-key!!"
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/firebase-credentials.json"
 export FLASK_DEBUG="true"
 ```
 
 **Windows PowerShell:**
 ```powershell
-$env:GOOGLE_APPLICATION_CREDENTIALS = ".\firebase-credentials.json"
-$env:FLASK_SECRET_KEY               = "your-random-secret-key-here"
+$env:FLASK_SECRET_KEY               = "any-local-dev-secret-key"
 $env:APP_MASTER_KEY                 = "your-32-char-master-encryption-key!!"
+$env:GOOGLE_APPLICATION_CREDENTIALS = "C:\path\to\firebase-credentials.json"
+$env:FLASK_DEBUG                    = "true"
 ```
 
-> ⚠️ **Use the same `APP_MASTER_KEY` locally and in production.** Data encrypted with one key cannot be decrypted with another. A mismatch causes an `InvalidSignature` error when reading Firestore data.
+> ⚠️ **Use the same `APP_MASTER_KEY` locally and in production.** Data encrypted with one key cannot be decrypted with another. A mismatch causes an `InvalidToken` error when reading Firestore data.
 
 ### Step 3 — Run the App
 
 ```bash
 python app.py
 # http://localhost:8080
+```
+
 ```
 
 ---
@@ -222,19 +229,35 @@ python app.py
 | 2 | `GOOGLE_APPLICATION_CREDENTIALS` — file path | Local development |
 | 3 (fallback) | Application Default Credentials | Cloud Run service account with Firebase role |
 
-> ✅ Always use `FIREBASE_CREDENTIALS_JSON` via Secret Manager in production. Reserve `GOOGLE_APPLICATION_CREDENTIALS` for local file paths only. Pasting raw JSON into `GOOGLE_APPLICATION_CREDENTIALS` will raise a clear `RuntimeError`.
+> ✅ Always use `FIREBASE_CREDENTIALS_JSON` via Secret Manager in production.
+> Reserve `GOOGLE_APPLICATION_CREDENTIALS` for local file paths only.
 
 ---
 
-## 7. Security Architecture
+## 7. Cloud Run Deployment Checklist
 
-| Layer | Implementation |
-|-------|---------------|
-| Login passwords | PBKDF2-SHA256, 390,000 rounds, unique random salt per user |
-| Stored credentials | AES-256 Fernet, unique PBKDF2-derived key per Firestore record |
+After the latest code changes, deploy as follows:
+
+1. Build and push the container image:
+   ```bash
+   gcloud builds submit --tag gcr.io/<PROJECT_ID>/sumilonapp
+   ```
+2. Go to **Cloud Run → your service → Edit & Deploy New Revision**
+3. Set **Memory** to `256 MiB`, **CPU** to `1`, **Min instances** to `0`, **Max instances** to `1`
+4. Ensure the three secrets are linked as env vars (see Section 4)
+5. Ensure `FLASK_DEBUG` is **not set** (or set to `false`) in Cloud Run
+6. Click **Deploy** and wait for the green checkmark
+7. Verify `/health` returns `{"status": "ok"}` after deployment
+
+**Security baseline applied in this build:**
+
+| Concern | Implementation |
+|---------|---------------|
+| Stored passwords | AES-256 Fernet, unique random salt, 600,000-iteration PBKDF2 key derivation |
+| Login passwords | PBKDF2-SHA256, 600,000 rounds, unique salt |
 | Timing attacks | `hmac.compare_digest` constant-time comparison |
-| Sessions | HttpOnly, SameSite=Lax, Secure cookie (enforced in production only) |
-| HTTP headers | CSP, X-Frame-Options DENY, X-Content-Type-Options, Referrer-Policy |
+| Sessions | HttpOnly, SameSite=Lax, Secure cookie, 2-hour lifetime |
+| HTTP headers | CSP nonce, X-Frame-Options DENY, X-Content-Type-Options, Referrer-Policy, HSTS |
 | Firestore rules | Deny all direct client access — Admin SDK bypasses rules server-side |
 | Debug mode | Only enabled locally via `FLASK_DEBUG` env var, never in Cloud Run |
 

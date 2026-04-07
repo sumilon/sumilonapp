@@ -1,21 +1,18 @@
 """
 config.py — Application configuration.
 
-Secrets are resolved lazily when Config() is instantiated inside create_app(),
-NOT at module-import time.  This prevents Secret Manager network calls during
-test collection, CLI usage, or any import that doesn't intend to start the app.
+Secrets are resolved lazily when Config() is instantiated inside create_app().
 
 Secret resolution order (first match wins):
   1. GCP Secret Manager  — production (Cloud Run)
   2. Environment variable — local dev or Cloud Run plain-env fallback
   3. Hard-coded safe default — local dev only (never used in production)
-
-HOW TO SET SECRETS — see .env.example for variable names.
 """
 
 import logging
 import os
 import secrets as _secrets
+from typing import Any, ClassVar, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +22,6 @@ _TRUTHY = {"1", "true", "yes"}
 class Config:
     """
     All configuration lives here.  Instantiate once inside create_app().
-
     Attributes are resolved from the environment on __init__ so that
     no network calls happen at import time.
     """
@@ -56,25 +52,31 @@ class Config:
         )
 
         try:
-            self.SESSION_LIFETIME_HOURS: int = int(
-                os.environ.get("SESSION_LIFETIME_HOURS", "8")
-            )
+            raw_hours = int(os.environ.get("SESSION_LIFETIME_HOURS", "2"))
+            # Clamp to a sensible range: at least 1 h, at most 24 h.
+            self.SESSION_LIFETIME_HOURS: int = max(1, min(raw_hours, 24))
+            if raw_hours != self.SESSION_LIFETIME_HOURS:
+                logger.warning(
+                    "SESSION_LIFETIME_HOURS=%d is outside the allowed range "
+                    "[1, 24] — clamped to %d.",
+                    raw_hours, self.SESSION_LIFETIME_HOURS,
+                )
         except ValueError:
-            logger.warning(
-                "SESSION_LIFETIME_HOURS is not a valid integer — defaulting to 8."
-            )
-            self.SESSION_LIFETIME_HOURS = 8
+            logger.warning("SESSION_LIFETIME_HOURS is not a valid integer — defaulting to 2.")
+            self.SESSION_LIFETIME_HOURS = 2
 
-        # Rate limit for auth endpoints (requests per minute per IP).
-        # After 3 attempts the IP is blocked for 1 minute.
         try:
-            self.AUTH_RATE_LIMIT: int = int(
-                os.environ.get("AUTH_RATE_LIMIT", "3")
-            )
+            raw_limit = int(os.environ.get("AUTH_RATE_LIMIT", "3"))
+            # Clamp to a sensible range: at least 1, at most 20.
+            self.AUTH_RATE_LIMIT: int = max(1, min(raw_limit, 20))
+            if raw_limit != self.AUTH_RATE_LIMIT:
+                logger.warning(
+                    "AUTH_RATE_LIMIT=%d is outside the allowed range "
+                    "[1, 20] — clamped to %d.",
+                    raw_limit, self.AUTH_RATE_LIMIT,
+                )
         except ValueError:
-            logger.warning(
-                "AUTH_RATE_LIMIT is not a valid integer — defaulting to 3."
-            )
+            logger.warning("AUTH_RATE_LIMIT is not a valid integer — defaulting to 3.")
             self.AUTH_RATE_LIMIT = 3
 
     @staticmethod
@@ -102,31 +104,37 @@ class Config:
         )
         return fallback
 
+    # Cached Secret Manager client — reuses the gRPC channel across all secret lookups.
+    _sm_client: ClassVar[Optional[Any]] = None
+
     @staticmethod
     def _from_secret_manager(secret_name: str) -> str:
         """
         Read the latest version of a secret from GCP Secret Manager.
         Returns "" (never raises) if unavailable for any reason.
+        The client is cached at the class level to reuse the same gRPC channel.
         """
         project = (
-                os.environ.get("GOOGLE_CLOUD_PROJECT")
-                or os.environ.get("GCP_PROJECT")
-                or ""
+            os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or os.environ.get("GCP_PROJECT")
+            or ""
         )
         if not project:
             return ""
 
         try:
-            from google.cloud import secretmanager  # optional dependency
+            from google.cloud import secretmanager
 
-            client = secretmanager.SecretManagerServiceClient()
-            resource = (
-                f"projects/{project}/secrets/{secret_name}/versions/latest"
+            if Config._sm_client is None:
+                Config._sm_client = secretmanager.SecretManagerServiceClient()
+
+            resource = f"projects/{project}/secrets/{secret_name}/versions/latest"
+            response = Config._sm_client.access_secret_version(
+                request={"name": resource}
             )
-            response = client.access_secret_version(request={"name": resource})
-            return response.payload.data.decode("utf-8").strip()
+            value = response.payload.data.decode("utf-8").strip()
+            return value if value else ""
         except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "Secret Manager lookup for '%s' skipped: %s", secret_name, exc
-            )
+            logger.debug("Secret Manager lookup for '%s' skipped: %s", secret_name, exc)
             return ""
+

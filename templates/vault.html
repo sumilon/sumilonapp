@@ -614,7 +614,7 @@
           passwords = await api('/vault/api/passwords');
           render();
         } catch (err) {
-          if (err.message && err.message.includes('401')) { doLogout(); return; }
+          if (err.status === 401) { doLogout(); return; }
           toast('Failed to load passwords');
         }
       }
@@ -681,6 +681,8 @@
         } catch (err) {
           if (err instanceof DOMException && err.name === 'NotAllowedError') {
             toast('Clipboard access denied — allow clipboard permission in your browser');
+          } else if (err.status === 410) {
+            toast('Token expired — please try copying again', 'error');
           } else {
             toast(err.message?.startsWith('HTTP') ? err.message : 'Failed to copy password');
           }
@@ -770,17 +772,42 @@
         btn.textContent = hide ? 'Hide'     : 'Show';
       }
       function genPw() {
-        const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', lower = 'abcdefghijklmnopqrstuvwxyz';
-        const digits = '0123456789', symbols = '!@#$%^&*()-_=+';
-        const all = upper + lower + digits + symbols;
-        const pick = src => src[crypto.getRandomValues(new Uint8Array(1))[0] % src.length];
+        const upper   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        const lower   = 'abcdefghijklmnopqrstuvwxyz';
+        const digits  = '0123456789';
+        const symbols = '!@#$%^&*()-_=+';
+        const all     = upper + lower + digits + symbols;
+
+        /*
+         * Unbiased random integer in [0, n) using rejection sampling.
+         * Simple modulo (byte % n) introduces modulo bias when 256 % n != 0,
+         * making some characters slightly more likely than others.
+         * Rejection sampling discards values in the biased tail, giving a
+         * perfectly uniform distribution regardless of alphabet size.
+         */
+        function unbiasedRandInt(n) {
+          const limit = 256 - (256 % n);          // largest multiple of n ≤ 256
+          let b;
+          do { b = crypto.getRandomValues(new Uint8Array(1))[0]; } while (b >= limit);
+          return b % n;
+        }
+
+        const pick = src => src[unbiasedRandInt(src.length)];
+
+        // Guarantee at least one character from each required class.
         const mandatory = [pick(upper), pick(lower), pick(digits), pick(symbols)];
-        const rest = Array.from(crypto.getRandomValues(new Uint8Array(20)), b => all[b % all.length]);
+
+        // Fill remaining 20 positions from the full alphabet.
+        const rest = [];
+        for (let i = 0; i < 20; i++) rest.push(all[unbiasedRandInt(all.length)]);
+
+        // Fisher-Yates shuffle with unbiased index selection.
         const chars = [...mandatory, ...rest];
         for (let i = chars.length - 1; i > 0; i--) {
-          const j = crypto.getRandomValues(new Uint8Array(1))[0] % (i + 1);
+          const j = unbiasedRandInt(i + 1);
           [chars[i], chars[j]] = [chars[j], chars[i]];
         }
+
         $('f-pw').value = chars.join('');
         $('f-pw').type = 'text';
         $('vis-btn').textContent = 'Hide';
@@ -793,7 +820,11 @@
         if (body) opts.body = typeof body === 'string' ? body : JSON.stringify(body);
         const res  = await fetch(url, opts);
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        if (!res.ok) {
+          const err = new Error(data.error || `HTTP ${res.status}`);
+          err.status = res.status;
+          throw err;
+        }
         return data;
       }
 

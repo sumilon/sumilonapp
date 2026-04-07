@@ -4,11 +4,8 @@ vault/auth.py — User registration, login, and the login_required decorator.
 All Firestore writes for the users collection go through this module.
 The passwords sub-collection is handled separately in vault/passwords.py.
 
-Fixes applied
--------------
-Fix #8 — register_user now uses a Firestore transaction to atomically check
-          for an existing email and write the new user document, eliminating
-          the TOCTOU race between the existence check and the write.
+register_user uses a Firestore transaction to atomically check for an
+existing email and write the new user document, eliminating any TOCTOU race.
 """
 
 import logging
@@ -30,11 +27,9 @@ logger = logging.getLogger(__name__)
 # Minimal RFC-5322-inspired email regex — catches typos without over-validating.
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-# Maximum field lengths — prevents oversized Firestore writes.
 _MAX_USERNAME_LEN = 120
 _MAX_PASSWORD_LEN = 256
 
-# Minimum password complexity requirements (server-side enforcement).
 _PW_MIN_LEN   = 8
 _PW_UPPER_RE  = re.compile(r"[A-Z]")
 _PW_LOWER_RE  = re.compile(r"[a-z]")
@@ -42,13 +37,8 @@ _PW_DIGIT_RE  = re.compile(r"\d")
 _PW_SYMBOL_RE = re.compile(r"[^A-Za-z0-9]")
 
 
-# ── Decorator ─────────────────────────────────────────────────────────────────
-
 def login_required(f):
-    """
-    Route decorator — returns 401 JSON when the session contains no uid.
-    Apply to every password-manager API endpoint.
-    """
+    """Route decorator — returns 401 JSON when the session contains no uid."""
     @wraps(f)
     def _wrapper(*args: Any, **kwargs: Any) -> ResponseReturnValue:
         if "uid" not in session:
@@ -57,15 +47,10 @@ def login_required(f):
     return _wrapper
 
 
-# ── Input validation ──────────────────────────────────────────────────────────
-
-def _validate_registration(
-    username: str, email: str, password: str
-) -> str | None:
+def _validate_registration(username: str, email: str, password: str) -> str | None:
     """
     Server-side input validation for registration.
     Returns an error string on failure, None on success.
-    Never rely solely on client-side validation.
     """
     if not username or not email or not password:
         return "All fields are required"
@@ -78,7 +63,6 @@ def _validate_registration(
     if len(password) > _MAX_PASSWORD_LEN:
         return f"Password must be {_MAX_PASSWORD_LEN} characters or fewer"
 
-    # Enforce complexity — mirrors the client-side strength meter requirements.
     missing: list[str] = []
     if not _PW_UPPER_RE.search(password):
         missing.append("an uppercase letter")
@@ -94,19 +78,25 @@ def _validate_registration(
     return None
 
 
-# ── Registration ──────────────────────────────────────────────────────────────
+def _mask_email(email: str) -> str:
+    """Return a masked email like 'j***@example.com' for safe logging."""
+    try:
+        local, domain = email.split("@", 1)
+        return f"{local[0]}***@{domain}" if local else "***@" + domain
+    except ValueError:
+        return "***"
+
 
 def register_user(username: str, email: str, password: str) -> dict[str, Any]:
     """
-    Create a new user document in Firestore atomically (Fix #8).
+    Create a new user document in Firestore atomically.
 
     Uses a Firestore transaction to eliminate the TOCTOU race between the
-    duplicate-email check and the document write.  If two concurrent requests
-    attempt to register the same email, exactly one will succeed.
+    duplicate-email check and the document write.
 
     Stored fields:
-      uid           — random 32-hex ID (plain; locates sub-collections)
-      email         — plain text (required for the login query)
+      uid           — random 32-hex ID (locates sub-collections)
+      email         — plain text (required for login query)
       email_enc     — AES-256 encrypted copy (privacy layer)
       username_enc  — AES-256 encrypted
       password_hash — PBKDF2-SHA256 hash — irreversible
@@ -127,15 +117,6 @@ def register_user(username: str, email: str, password: str) -> dict[str, Any]:
 
     @firestore.transactional
     def _create_in_transaction(transaction) -> bool:
-        """
-        Within a single transaction:
-          1. Query for an existing account with this email.
-          2. If found, abort (return False).
-          3. Otherwise write the new user document and return True.
-
-        Firestore transactions guarantee that no other write can slip in
-        between steps 1 and 3.
-        """
         existing = (
             db.collection("users")
             .where(filter=FieldFilter("email", "==", email))
@@ -165,8 +146,6 @@ def register_user(username: str, email: str, password: str) -> dict[str, Any]:
     return {"ok": True}
 
 
-# ── Login ─────────────────────────────────────────────────────────────────────
-
 def login_user(email: str, password: str) -> dict[str, Any]:
     """
     Verify credentials and populate the Flask session.
@@ -190,7 +169,7 @@ def login_user(email: str, password: str) -> dict[str, Any]:
         .get()
     )
     if not docs:
-        logger.warning("Login failed — email not found: %s", email)
+        logger.warning("Login failed — email not found: %s", _mask_email(email))
         return {"error": "Invalid email or password"}
 
     user = docs[0].to_dict()

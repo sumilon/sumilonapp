@@ -1,19 +1,7 @@
 """
 calculator/logic.py — Pure Python financial calculator functions.
 
-These are the canonical implementations. The JavaScript in the template
-mirrors these exactly so client-side results match server-side results.
-
 All functions raise ValueError on invalid inputs.
-
-Fixes applied
--------------
-Fix #10 — indian_format now raises TypeError on None instead of silently
-           returning "0.00", making the behaviour consistent with _positive().
-           The parameter is typed as float and documented explicitly.
-
-Fix #11 — calc_swp documents and handles the edge case where the initial
-           withdrawal exceeds the corpus immediately.
 """
 
 from __future__ import annotations
@@ -23,17 +11,13 @@ def indian_format(num: float) -> str:
     """
     Format a number in Indian number system (e.g. 1,23,456.78).
 
-    Fix #10: Raises TypeError if num is None so callers cannot silently
-    pass None and get back "0.00" — a value that looks valid but is wrong.
+    Raises TypeError if num is None.
 
     Args:
-        num: A finite float or int.  Must not be None.
+        num: A finite float or int. Must not be None.
 
     Returns:
         A string formatted with Indian-style comma grouping and 2 decimal places.
-
-    Raises:
-        TypeError: If num is None.
     """
     if num is None:
         raise TypeError("indian_format() requires a float, got None")
@@ -131,8 +115,7 @@ def calc_swp(
     """
     Systematic Withdrawal Plan with optional inflation adjustment.
 
-    Fix #11: Documents and handles the edge case where withdraw >= principal
-    on the very first month.  In this scenario the corpus is depleted
+    If withdraw >= principal on the first month, the corpus is depleted
     immediately: total_out equals principal, final_value is 0.
 
     Args:
