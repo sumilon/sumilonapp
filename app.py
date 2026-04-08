@@ -46,7 +46,7 @@ def create_app() -> Flask:
     """Create, configure and return the Flask application."""
     _configure_logging()
 
-    flask_app = Flask(__name__, template_folder="templates", static_folder=None)
+    flask_app = Flask(__name__, template_folder="templates", static_folder="static")
 
     cfg = Config()
     flask_app.config.update(
@@ -82,9 +82,15 @@ def create_app() -> Flask:
         return jsonify({"status": "ok"}), 200
 
     @flask_app.get("/favicon.ico")
+    @flask_app.get("/favicon.svg")
     def favicon() -> ResponseReturnValue:
-        """Return 204 so browsers don't log 404 errors when no favicon is present."""
-        return "", 204
+        """Serve the SVG app icon for browser tabs and bookmarks."""
+        from flask import send_from_directory
+        return send_from_directory(
+            flask_app.static_folder,
+            "logo.svg",
+            mimetype="image/svg+xml",
+        )
 
     @flask_app.before_request
     def _set_csp_nonce() -> None:
